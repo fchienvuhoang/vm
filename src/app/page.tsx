@@ -73,7 +73,7 @@ const formatDateStr = (dateStr: string) => {
 };
 
 const TABLE_COLUMNS = [
-  { label: "Ngày giờ", key: "ngayGioGiaoDich" as keyof ParsedRecord, width: 140 },
+  { label: "Ngày giờ", key: "ngayGioGiaoDich" as keyof ParsedRecord, width: 180 },
   { label: "Tên chủ tài khoản", key: "tenChuTaiKhoan" as keyof ParsedRecord, width: 220 },
   { label: "Chi tiết giao dịch", key: "chiTietGiaoDich" as keyof ParsedRecord, left: 50, width: 350 },
   { label: "Tiền ra", key: "tienRa" as keyof ParsedRecord, width: 130 },
@@ -755,7 +755,7 @@ export default function Home() {
                               baseClass += " font-medium whitespace-nowrap text-left text-slate-700";
                             } else if (col.key === "ngayGioGiaoDich") {
                               displayVal = formatDateStr(displayVal);
-                              baseClass += " whitespace-nowrap overflow-hidden text-ellipsis text-sm text-slate-600";
+                              baseClass += " whitespace-nowrap text-sm text-slate-600";
                             } else if (col.key === "tenChuTaiKhoan") {
                               baseClass += " whitespace-normal break-words text-sm";
                             } else {

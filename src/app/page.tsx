@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { parseExcelBankStatement } from "@/lib/excelParser";
-import { Category, ParsedRecord } from "@/lib/types";
+import { Category, ParsedRecord, UploadLog, UploadLogRecord } from "@/lib/types";
 import {
   UploadCloud,
   FileSpreadsheet,
@@ -19,7 +19,9 @@ import {
   Save,
   Sparkles,
   BarChart2,
-  X
+  X,
+  ArrowLeft,
+  ChevronRight
 } from "lucide-react";
 import { 
   checkAuthStatus, 
@@ -80,6 +82,26 @@ const TABLE_COLUMNS = [
   { label: "Tiền vào", key: "tienVao" as keyof ParsedRecord, width: 130 },
 ];
 
+const classifyRecords = (records: ParsedRecord[], categories: Category[]) => {
+  return records.map((record) => {
+    let matchedCategoryId: string | undefined;
+    const searchNorm = record.searchText.toLowerCase().replace(/[\s\-_.+,/#!$%^&*;:{}=\\`~()]/g, '');
+
+    for (const cat of categories) {
+      const matched = cat.keywords.some((keyword) => {
+        const keywordNorm = keyword.toLowerCase().replace(/[\s\-_.+,/#!$%^&*;:{}=\\`~()]/g, '');
+        return keywordNorm.length > 0 && searchNorm.includes(keywordNorm);
+      });
+      if (matched) {
+        matchedCategoryId = cat.id;
+        break;
+      }
+    }
+
+    return { ...record, matchedCategoryId };
+  });
+};
+
 export default function Home() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [appliedCategories, setAppliedCategories] = useState<Category[]>([]);
@@ -133,10 +155,12 @@ export default function Home() {
 
   // Stats Modal
   const [showStats, setShowStats] = useState(false);
-  const [statsData, setStatsData] = useState<{ total: number; logs: { time: string; rowCount: number }[] }>({ total: 0, logs: [] });
+  const [statsData, setStatsData] = useState<{ total: number; logs: UploadLog[] }>({ total: 0, logs: [] });
   const [isLoadingStats, setIsLoadingStats] = useState(false);
+  const [selectedLog, setSelectedLog] = useState<UploadLog | null>(null);
 
   const handleOpenStats = async () => {
+    setSelectedLog(null);
     setShowStats(true);
     setIsLoadingStats(true);
     const data = await getUploadStatsAction();
@@ -219,9 +243,21 @@ export default function Home() {
     try {
       const parsed = await parseExcelBankStatement(file);
       setRecords(parsed);
-      
-      // Ghi log số dòng đã parse để theo dõi mức độ sử dụng (không lưu file)
-      logFileUploadAction(parsed.length).catch(console.error);
+
+      const classified = classifyRecords(parsed, appliedCategories);
+      const logRecords: UploadLogRecord[] = classified
+        .filter((record) => !record.isFooter)
+        .map((record) => ({
+          soThamChieu: record.soThamChieu,
+          ngayGioGiaoDich: record.ngayGioGiaoDich,
+          tenChuTaiKhoan: record.tenChuTaiKhoan,
+          chiTietGiaoDich: record.chiTietGiaoDich,
+          tienRa: record.tienRa,
+          tienVao: record.tienVao,
+          categoryName: appliedCategories.find((cat) => cat.id === record.matchedCategoryId)?.name || "Chưa phân loại",
+        }));
+
+      logFileUploadAction(parsed.length, logRecords).catch(console.error);
     } catch (error) {
       console.error("Error parsing file", error);
       alert("Đã xảy ra lỗi khi đọc file Excel.");
@@ -287,26 +323,7 @@ export default function Home() {
 
   // Compute matches
   const computedRecords = useMemo(() => {
-    return records.map((record) => {
-      let matchedCategoryId: string | undefined = undefined;
-
-      // Find the first category that has a keyword matching the search text
-      for (const cat of appliedCategories) {
-        for (const kw of cat.keywords) {
-          // Normalize both strings by removing spaces, dashes, dots, and underscores for extremely forgiving matching
-          const searchNorm = record.searchText.toLowerCase().replace(/[\s\-_.+,/#!$%^&*;:{}=\\`~()]/g, '');
-          const kwNorm = kw.toLowerCase().replace(/[\s\-_.+,/#!$%^&*;:{}=\\`~()]/g, '');
-
-          if (searchNorm.includes(kwNorm)) {
-            matchedCategoryId = cat.id;
-            break; // Stop checking keywords for this category
-          }
-        }
-        if (matchedCategoryId) break; // Stop checking other categories if matched
-      }
-
-      return { ...record, matchedCategoryId };
-    });
+    return classifyRecords(records, appliedCategories);
   }, [records, appliedCategories]);
 
   // Filter records based on active tab
@@ -834,19 +851,73 @@ export default function Home() {
       {/* STATS MODAL */}
       {showStats && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className={`bg-white rounded-2xl w-full ${selectedLog ? "max-w-6xl" : "max-w-lg"} shadow-xl overflow-hidden flex flex-col max-h-[90vh] transition-all`}>
             <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
               <h2 className="text-lg font-bold flex items-center gap-2">
-                <BarChart2 className="w-5 h-5 text-indigo-600" />
-                Thống kê sử dụng
+                {selectedLog ? (
+                  <button
+                    onClick={() => setSelectedLog(null)}
+                    className="p-1 -ml-1 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-200 transition cursor-pointer"
+                    aria-label="Quay lại lịch sử"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                ) : (
+                  <BarChart2 className="w-5 h-5 text-indigo-600" />
+                )}
+                {selectedLog ? "Chi tiết lần phân loại" : "Thống kê sử dụng"}
               </h2>
-              <button onClick={() => setShowStats(false)} className="text-gray-400 hover:text-gray-600 p-1 flex-shrink-0 cursor-pointer transition">
+              <button onClick={() => { setShowStats(false); setSelectedLog(null); }} className="text-gray-400 hover:text-gray-600 p-1 flex-shrink-0 cursor-pointer transition">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 flex-1 overflow-y-auto">
+            <div className={`${selectedLog ? "p-0" : "p-6"} flex-1 overflow-y-auto`}>
               {isLoadingStats ? (
                 <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-indigo-600" /></div>
+              ) : selectedLog ? (
+                <div>
+                  <div className="px-5 py-4 bg-indigo-50 border-b border-indigo-100 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm text-indigo-700">Thời gian xử lý</p>
+                      <p className="font-semibold text-gray-900">{new Date(selectedLog.time).toLocaleString('vi-VN')}</p>
+                    </div>
+                    <span className="font-semibold text-indigo-800 bg-white px-3 py-1.5 rounded-lg border border-indigo-200">
+                      {selectedLog.rowCount} dòng
+                    </span>
+                  </div>
+                  <div className="overflow-auto">
+                    <table className="w-full min-w-[950px] text-left border-collapse text-sm">
+                      <thead className="bg-gray-50 sticky top-0 z-10 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 font-medium text-gray-500 w-14 text-center">STT</th>
+                          <th className="px-4 py-3 font-medium text-gray-500 whitespace-nowrap">Nhóm phân loại</th>
+                          <th className="px-4 py-3 font-medium text-gray-500 whitespace-nowrap">Ngày giờ</th>
+                          <th className="px-4 py-3 font-medium text-gray-500 whitespace-nowrap">Tên chủ tài khoản</th>
+                          <th className="px-4 py-3 font-medium text-gray-500 min-w-[300px]">Chi tiết giao dịch</th>
+                          <th className="px-4 py-3 font-medium text-gray-500 whitespace-nowrap">Tiền ra</th>
+                          <th className="px-4 py-3 font-medium text-gray-500 whitespace-nowrap">Tiền vào</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {(selectedLog.records || []).map((record, index) => (
+                          <tr key={`${record.soThamChieu}-${index}`} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-center text-gray-500">{index + 1}</td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${record.categoryName === "Chưa phân loại" ? "bg-gray-100 text-gray-600" : "bg-indigo-50 text-indigo-700"}`}>
+                                {record.categoryName}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDateStr(record.ngayGioGiaoDich)}</td>
+                            <td className="px-4 py-3 text-gray-700">{record.tenChuTaiKhoan}</td>
+                            <td className="px-4 py-3 text-gray-700 whitespace-pre-wrap break-words">{record.chiTietGiaoDich}</td>
+                            <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{record.tienRa !== "" ? new Intl.NumberFormat('en-US').format(cleanNumber(record.tienRa)) : ""}</td>
+                            <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{record.tienVao !== "" ? new Intl.NumberFormat('en-US').format(cleanNumber(record.tienVao)) : ""}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-6">
                   <div className="bg-indigo-50 rounded-xl p-4 flex flex-col items-center justify-center border border-indigo-100 shadow-sm">
@@ -864,12 +935,22 @@ export default function Home() {
                         {statsData.logs.map((log, idx) => {
                           const loadDate = new Date(log.time);
                           return (
-                            <div key={idx} className="flex justify-between items-center text-sm p-3 bg-gray-50 hover:bg-gray-100 transition rounded-lg border border-gray-100">
+                            <button
+                              key={log.id || `${log.time}-${idx}`}
+                              type="button"
+                              disabled={!log.records}
+                              onClick={() => log.records && setSelectedLog(log)}
+                              className={`w-full flex justify-between items-center text-sm p-3 bg-gray-50 transition rounded-lg border border-gray-100 text-left ${log.records ? "hover:bg-indigo-50 hover:border-indigo-200 cursor-pointer group" : "cursor-not-allowed opacity-70"}`}
+                            >
                               <span className="text-gray-600 font-medium">{loadDate.toLocaleString('vi-VN')}</span>
-                              <span className="font-semibold text-gray-800 bg-white shadow-sm px-2.5 py-1 rounded-md border border-gray-200">
-                                {log.rowCount} dòng
+                              <span className="flex items-center gap-2">
+                                {!log.records && <span className="text-xs text-gray-400">Log cũ, không có chi tiết</span>}
+                                <span className="font-semibold text-gray-800 bg-white shadow-sm px-2.5 py-1 rounded-md border border-gray-200">
+                                  {log.rowCount} dòng
+                                </span>
+                                {log.records && <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-600" />}
                               </span>
-                            </div>
+                            </button>
                           );
                         })}
                       </div>

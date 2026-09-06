@@ -20,3 +20,20 @@ export interface ParsedRecord {
   matchedCategoryId?: string;
   isFooter?: boolean;
 }
+
+export interface UploadLogRecord {
+  soThamChieu: string;
+  ngayGioGiaoDich: string;
+  tenChuTaiKhoan: string;
+  chiTietGiaoDich: string;
+  tienRa: string | number;
+  tienVao: string | number;
+  categoryName: string;
+}
+
+export interface UploadLog {
+  id?: string;
+  time: string;
+  rowCount: number;
+  records?: UploadLogRecord[];
+}

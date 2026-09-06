@@ -2,7 +2,7 @@
 
 import { Redis } from "@upstash/redis";
 import { cookies } from "next/headers";
-import { Category } from "@/lib/types";
+import { Category, UploadLogRecord } from "@/lib/types";
 
 // Khởi tạo Redis client
 const redis = new Redis({
@@ -80,14 +80,29 @@ export async function saveAppliedCategoriesAction(categories: Category[]) {
 }
 
 // -- THEO DÕI SỬ DỤNG LƯỢNG LƯU TRỮ --
-export async function logFileUploadAction(rowCount: number) {
+export async function logFileUploadAction(rowCount: number, records: UploadLogRecord[]) {
   // Không cần xác thực cũng có thể ghi log ẩn danh, hoặc cần xác thực
   if (!(await checkAuthStatus())) return { success: false };
 
   try {
     const time = new Date().toISOString();
-    // Ghi log đơn giản vào mảng để theo dõi (Lưu 100 lần gần nhất)
-    await redis.lpush("vimutti_upload_logs", { time, rowCount });
+    const safeRecords = records.slice(0, Math.max(0, rowCount)).map((record) => ({
+      soThamChieu: String(record.soThamChieu || ""),
+      ngayGioGiaoDich: String(record.ngayGioGiaoDich || ""),
+      tenChuTaiKhoan: String(record.tenChuTaiKhoan || ""),
+      chiTietGiaoDich: String(record.chiTietGiaoDich || ""),
+      tienRa: typeof record.tienRa === "number" ? record.tienRa : String(record.tienRa || ""),
+      tienVao: typeof record.tienVao === "number" ? record.tienVao : String(record.tienVao || ""),
+      categoryName: String(record.categoryName || "Chưa phân loại"),
+    }));
+
+    // Lưu ảnh chụp kết quả phân loại để có thể xem lại từ lịch sử.
+    await redis.lpush("vimutti_upload_logs", {
+      id: crypto.randomUUID(),
+      time,
+      rowCount,
+      records: safeRecords,
+    });
     await redis.ltrim("vimutti_upload_logs", 0, 99);
     
     // Tăng tổng số file đã xử lý

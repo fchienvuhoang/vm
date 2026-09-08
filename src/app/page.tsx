@@ -188,6 +188,8 @@ export default function Home() {
   // Form states for category
   const [newCatKeywords, setNewCatKeywords] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
 
   // Tab & UI status states
   const [activeTab, setActiveTab] = useState<string>("all");
@@ -370,11 +372,25 @@ export default function Home() {
 
     // Reset form
     setNewCatKeywords("");
+    setShowCategoryModal(false);
   };
 
   const handleEditCategory = (cat: Category) => {
     setNewCatKeywords(cat.keywords.join(", "));
     setEditingId(cat.id);
+    setShowCategoryModal(true);
+  };
+
+  const handleOpenAddCategory = () => {
+    setEditingId(null);
+    setNewCatKeywords("");
+    setShowCategoryModal(true);
+  };
+
+  const handleCloseCategoryModal = () => {
+    setEditingId(null);
+    setNewCatKeywords("");
+    setShowCategoryModal(false);
   };
 
   const handleRemoveCategory = (id: string) => {
@@ -383,8 +399,7 @@ export default function Home() {
     saveCategoriesAction(updated);
 
     if (editingId === id) {
-      setEditingId(null);
-      setNewCatKeywords("");
+      handleCloseCategoryModal();
     }
   };
 
@@ -629,12 +644,12 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto flex flex-col gap-8">
+      <main className="mx-auto grid max-w-6xl grid-cols-1 items-start gap-6 lg:grid-cols-10">
 
         {/* TOP SECTION */}
-        <div className="flex flex-col gap-6">
+        <div className="contents">
           {/* File Upload Panel */}
-          <section className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <section className="order-1 flex flex-col items-center justify-between gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:flex-row lg:col-span-10">
             <div className="flex items-center gap-3">
               <UploadCloud className="w-5 h-5 text-indigo-600" />
               <h2 className="text-lg font-semibold m-0">Tải Lên Sao Kê</h2>
@@ -661,73 +676,19 @@ export default function Home() {
           </section>
 
           {/* Keyword Management Panel */}
-          <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col relative overflow-hidden">
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <Filter className="w-5 h-5 text-indigo-600" />
-              Cài Đặt Thiện Pháp
-            </h2>
-
-            {/* Add form */}
-            <div className={`bg-gray-50 rounded-xl p-4 border mb-4 transition-colors ${editingId ? 'border-yellow-300 bg-yellow-50' : 'border-gray-100'}`}>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Danh Sách Từ Khóa (cách nhau bởi dấu phẩy)
-                  </label>
-                  <input
-                    type="text"
-                    value={newCatKeywords}
-                    onChange={(e) => setNewCatKeywords(e.target.value)}
-                    placeholder="tp44, hoa sen, ..."
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleAddOrEditCategory();
-                    }}
-                  />
-                  {suggestedKeywords.length > 0 && (
-                    <div className="mt-3 bg-white p-2 rounded border border-gray-100">
-                      <span className="flex items-center gap-1 text-[11px] font-medium text-amber-600 mb-2">
-                        <Sparkles className="w-3 h-3" />
-                        Gợi ý từ khóa thông minh (Nhấn để thêm):
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {suggestedKeywords.map((kw, i) => (
-                          <button
-                            key={i}
-                            onClick={() => {
-                              const current = newCatKeywords.trim();
-                              setNewCatKeywords(current ? current + ", " + kw : kw);
-                            }}
-                            className="text-[11px] bg-amber-50 text-amber-700 px-2 py-1 rounded hover:bg-amber-100 transition cursor-pointer"
-                          >
-                            {kw}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <button
-                    onClick={handleAddOrEditCategory}
-                    className="w-full flex items-center justify-center cursor-pointer gap-2 bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition"
-                  >
-                    {editingId ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                    {editingId ? "Lưu Chỉnh Sửa" : "Thêm Nhóm Từ Khóa"}
-                  </button>
-                  {editingId && (
-                    <button
-                      onClick={() => {
-                        setEditingId(null);
-                        setNewCatKeywords("");
-                      }}
-                      className="whitespace-nowrap px-4 py-2 cursor-pointer bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 transition"
-                    >
-                      Hủy Sửa
-                    </button>
-                  )}
-                </div>
-              </div>
+          <section className="order-3 relative flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white p-5 shadow-sm lg:sticky lg:top-6 lg:col-span-3 lg:col-start-8 lg:row-start-2">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <Filter className="w-5 h-5 text-indigo-600" />
+                Cài Đặt Thiện Pháp
+              </h2>
+              <button
+                onClick={handleOpenAddCategory}
+                className="flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+              >
+                <Plus className="h-4 w-4" />
+                Thêm thiện pháp
+              </button>
             </div>
 
             {/* List of draft categories */}
@@ -745,7 +706,7 @@ export default function Home() {
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleRemoveCategory(cat.id)}
+                        onClick={() => setCategoryToDelete(cat)}
                         className="text-gray-400 hover:text-red-500 transition p-1 cursor-pointer"
                         title="Xóa"
                       >
@@ -832,17 +793,17 @@ export default function Home() {
         </div>
 
         {/* BOTTOM SECTION: Results & Display */}
-        <div className="w-full">
-          <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden min-h-[500px] flex flex-col sm:flex-row relative">
+        <div className="order-2 min-w-0 lg:col-span-7 lg:col-start-1 lg:row-start-2">
+          <section className="relative flex min-h-[500px] flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
 
-            {/* Left Sidebar for Tabs */}
-            <div className="w-full sm:w-56 flex-shrink-0 flex flex-col border-b sm:border-b-0 sm:border-r border-gray-200 bg-gray-50">
+            {/* Horizontal result filters */}
+            <div className="w-full flex-shrink-0 border-b border-gray-200 bg-gray-50">
               {/* Tabs */}
-              <div className="flex-1 p-3 flex flex-col gap-1.5 overflow-y-auto max-h-[250px] sm:max-h-none">
+              <div className="flex items-stretch gap-2 overflow-x-auto p-3">
                 <button
                   onClick={() => setActiveTab("all")}
                   aria-current={activeTab === "all" ? "page" : undefined}
-                  className={`w-full text-left flex-shrink-0 cursor-pointer px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all ${activeTab === "all" ? "bg-indigo-600 text-white font-semibold shadow-md border-indigo-700 ring-2 ring-indigo-200" : "text-gray-600 border-transparent hover:bg-gray-200/50"
+                  className={`min-w-max flex-shrink-0 cursor-pointer rounded-lg border-2 px-3 py-2 text-left text-sm font-medium transition-all ${activeTab === "all" ? "bg-indigo-600 text-white font-semibold shadow-md border-indigo-700 ring-2 ring-indigo-200" : "text-gray-600 border-transparent hover:bg-gray-200/50"
                     }`}
                 >
                   Tất cả ({computedRecords.filter(r => !r.isFooter).length})
@@ -862,7 +823,7 @@ export default function Home() {
                       key={cat.id}
                       onClick={() => setActiveTab(cat.id)}
                       aria-current={isActive ? "page" : undefined}
-                      className={`w-full text-left flex-shrink-0 cursor-pointer px-3 py-2 rounded-lg transition-all ${tabColor}`}
+                      className={`min-w-[180px] max-w-[240px] flex-shrink-0 cursor-pointer rounded-lg px-3 py-2 text-left transition-all ${tabColor}`}
                     >
                       <span className={`flex items-center justify-between gap-2 text-sm ${isActive ? "font-semibold" : "font-medium"}`}>
                         <span className="truncate">{cat.name}</span>
@@ -894,7 +855,7 @@ export default function Home() {
                 <button
                   onClick={() => setActiveTab("uncategorized")}
                   aria-current={activeTab === "uncategorized" ? "page" : undefined}
-                  className={`w-full text-left flex-shrink-0 cursor-pointer px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all ${activeTab === "uncategorized" ? "bg-indigo-600 text-white font-semibold shadow-md border-indigo-700 ring-2 ring-indigo-200" : "text-gray-600 border-transparent hover:bg-gray-200/50"
+                  className={`min-w-max flex-shrink-0 cursor-pointer rounded-lg border-2 px-3 py-2 text-left text-sm font-medium transition-all ${activeTab === "uncategorized" ? "bg-indigo-600 text-white font-semibold shadow-md border-indigo-700 ring-2 ring-indigo-200" : "text-gray-600 border-transparent hover:bg-gray-200/50"
                     }`}
                 >
                   Chưa phân loại ({computedRecords.filter(r => !r.matchedCategoryId && !r.isFooter).length})
@@ -1147,6 +1108,166 @@ export default function Home() {
           </section>
         </div>
       </main>
+
+      {/* CATEGORY ADD / EDIT MODAL */}
+      {showCategoryModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) handleCloseCategoryModal();
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="category-modal-title"
+            className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+          >
+            <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 p-4">
+              <div>
+                <h2 id="category-modal-title" className="text-lg font-bold text-gray-900">
+                  {editingId ? "Chỉnh sửa thiện pháp" : "Thêm thiện pháp"}
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  Tên thiện pháp được lấy từ từ khóa đầu tiên.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseCategoryModal}
+                aria-label="Đóng"
+                className="cursor-pointer rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-200 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleAddOrEditCategory();
+              }}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              <div className="flex-1 overflow-y-auto p-5">
+                <label htmlFor="category-keywords" className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Danh sách từ khóa
+                </label>
+                <input
+                  id="category-keywords"
+                  type="text"
+                  value={newCatKeywords}
+                  onChange={(event) => setNewCatKeywords(event.target.value)}
+                  placeholder="tp44, hoa sen, ..."
+                  autoFocus
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+                />
+                <p className="mt-1.5 text-xs text-gray-500">Các từ khóa cách nhau bằng dấu phẩy.</p>
+
+                {suggestedKeywords.length > 0 && (
+                  <div className="mt-4 rounded-lg border border-amber-100 bg-amber-50/60 p-3">
+                    <span className="mb-2 flex items-center gap-1 text-xs font-medium text-amber-700">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Gợi ý từ khóa thông minh — bấm để thêm
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {suggestedKeywords.map((keyword, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => {
+                            const current = newCatKeywords.trim();
+                            setNewCatKeywords(current ? `${current}, ${keyword}` : keyword);
+                          }}
+                          className="cursor-pointer rounded-md bg-white px-2 py-1 text-[11px] font-medium text-amber-700 shadow-sm transition hover:bg-amber-100"
+                        >
+                          {keyword}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-gray-100 bg-gray-50 p-4">
+                <button
+                  type="button"
+                  onClick={handleCloseCategoryModal}
+                  className="cursor-pointer rounded-lg px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-200"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={!newCatKeywords.trim()}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  {editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  {editingId ? "Lưu chỉnh sửa" : "Thêm thiện pháp"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CATEGORY DELETE CONFIRMATION MODAL */}
+      {categoryToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setCategoryToDelete(null);
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-category-title"
+            aria-describedby="delete-category-description"
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl"
+          >
+            <div className="flex items-start justify-between border-b border-gray-100 p-5">
+              <div>
+                <h2 id="delete-category-title" className="text-lg font-bold text-gray-900">
+                  Xóa thiện pháp?
+                </h2>
+                <p id="delete-category-description" className="mt-2 text-sm leading-relaxed text-gray-600">
+                  Bạn có chắc muốn xóa thiện pháp <strong className="text-gray-900">{categoryToDelete.name}</strong>? Thao tác này sẽ xóa cấu hình từ khóa và liên kết Google Sheet của thiện pháp.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCategoryToDelete(null)}
+                aria-label="Đóng"
+                className="ml-4 shrink-0 cursor-pointer rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex justify-end gap-2 bg-gray-50 p-4">
+              <button
+                type="button"
+                onClick={() => setCategoryToDelete(null)}
+                className="cursor-pointer rounded-lg px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-200"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleRemoveCategory(categoryToDelete.id);
+                  setCategoryToDelete(null);
+                }}
+                autoFocus
+                className="flex cursor-pointer items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+              >
+                <Trash2 className="h-4 w-4" />
+                Xóa thiện pháp
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* GOOGLE SHEET LINK MODAL */}
       {linkingCategory && (

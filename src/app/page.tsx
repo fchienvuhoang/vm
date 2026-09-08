@@ -196,7 +196,6 @@ export default function Home() {
   const [isApplying, setIsApplying] = useState(false);
   const [applyMessage, setApplyMessage] = useState("");
   const [copiedTab, setCopiedTab] = useState(false);
-  const [copiedAll, setCopiedAll] = useState(false);
   const [linkingCategory, setLinkingCategory] = useState<Category | null>(null);
   const [sheetFiles, setSheetFiles] = useState<GoogleSheetFile[]>([]);
   const [sheetTabs, setSheetTabs] = useState<GoogleSheetTab[]>([]);
@@ -428,6 +427,8 @@ export default function Home() {
     try {
       const parsed = await parseExcelBankStatement(file);
       setRecords(parsed);
+      setSuccessfulSheetSyncSignatures({});
+      setSheetSyncMessage("");
 
       const classified = classifyRecords(parsed, appliedCategories);
       const logRecords: UploadLogRecord[] = classified
@@ -452,9 +453,6 @@ export default function Home() {
   const handleCopyTable = () => {
     if (filteredRecords.length === 0) return;
 
-    // Headers
-    const headers = ["STT", ...TABLE_COLUMNS.map(c => c.label)].join("\t");
-    // Rows
     const rows = filteredRecords.map((record, index) => {
       const rowStr = TABLE_COLUMNS.map(col => {
         let val = record[col.key];
@@ -470,34 +468,9 @@ export default function Home() {
       return `${stt}\t${rowStr}`;
     }).join("\n");
 
-    const isCategoryTab = activeTab !== "all" && activeTab !== "uncategorized";
-    navigator.clipboard.writeText(isCategoryTab ? rows : `${headers}\n${rows}`);
+    navigator.clipboard.writeText(rows);
     setCopiedTab(true);
     setTimeout(() => setCopiedTab(false), 2000);
-  };
-
-  const handleCopyAllData = () => {
-    if (computedRecords.length === 0) return;
-
-    const headers = ["STT", ...TABLE_COLUMNS.map(c => c.label)].join("\t");
-    
-    const rows = computedRecords.filter(r => !r.isFooter).map((record, index) => {
-      const rowStr = TABLE_COLUMNS.map(col => {
-        let val = record[col.key];
-        if (col.key === "ngayGioGiaoDich") val = formatDateStr(String(val || ""));
-        else if (col.key === "tienRa" || col.key === "tienVao") {
-           const num = cleanNumber(val);
-           if (!isNaN(num)) val = num;
-        }
-        return String(val || "").replace(/\n/g, " ");
-      }).join("\t");
-      
-      return `${index + 1}\t${rowStr}`;
-    }).join("\n");
-
-    navigator.clipboard.writeText(`${headers}\n${rows}`);
-    setCopiedAll(true);
-    setTimeout(() => setCopiedAll(false), 2000);
   };
 
   // Compute matches
@@ -911,50 +884,34 @@ export default function Home() {
                             target="_blank"
                             rel="noopener noreferrer"
                             title={`Mở ${category.sheetLink.spreadsheetName} / ${category.sheetLink.sheetName}`}
-                            className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+                            className="flex min-w-0 max-w-full items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
                           >
-                            <ExternalLink className="h-4 w-4" />
-                            Mở Google Sheet
+                            <ExternalLink className="h-4 w-4 shrink-0" />
+                            <span className="truncate">
+                              {category.sheetLink.spreadsheetName} ⇒ {category.sheetLink.sheetName}
+                            </span>
                           </a>
                         )}
                       </div>
                     );
                   })()}
                   {filteredRecords.length > 0 && (
-                    <>
-                      <button
-                        onClick={handleCopyAllData}
-                        className="flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition shadow-sm"
-                      >
-                        {copiedAll ? (
-                          <>
-                            <Check className="w-4 h-4 text-indigo-500" />
-                            Đã Copy Tất Cả!
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-4 h-4" />
-                            Copy tất cả tab
-                          </>
-                        )}
-                      </button>
-                      <button
-                        onClick={handleCopyTable}
-                        className="flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition shadow-sm"
-                      >
-                        {copiedTab ? (
-                          <>
-                            <Check className="w-4 h-4 text-green-400" />
-                            Đã Copy!
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-4 h-4" />
-                            Copy bảng {activeTab === "all" ? "Tất cả" : activeTab === "uncategorized" ? "Chưa phân loại" : appliedCategories.find(c => c.id === activeTab)?.name || ""}
-                          </>
-                        )}
-                      </button>
-                    </>
+                    <button
+                      onClick={handleCopyTable}
+                      className="flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition shadow-sm"
+                    >
+                      {copiedTab ? (
+                        <>
+                          <Check className="w-4 h-4 text-green-400" />
+                          Đã Copy!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-4 h-4" />
+                          Copy bảng {activeTab === "all" ? "Tất cả" : activeTab === "uncategorized" ? "Chưa phân loại" : appliedCategories.find(c => c.id === activeTab)?.name || ""}
+                        </>
+                      )}
+                    </button>
                   )}
                 </div>
               )}
@@ -1073,22 +1030,6 @@ export default function Home() {
               {/* Footer Copy Button */}
               {filteredRecords.length > 0 && (
                 <div className="p-2 border-t border-gray-100 flex justify-end gap-2 bg-white">
-                  <button
-                    onClick={handleCopyAllData}
-                    className="flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition shadow-sm"
-                  >
-                    {copiedAll ? (
-                      <>
-                        <Check className="w-4 h-4 text-indigo-500" />
-                        Đã Copy Tất Cả!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4" />
-                        Copy tất cả tab
-                      </>
-                    )}
-                  </button>
                   <button
                     onClick={handleCopyTable}
                     className="flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition shadow-sm"

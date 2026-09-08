@@ -22,9 +22,9 @@ function parseVietnameseDate(dateStr: string): number {
      year += 2000;
   }
   
-  let hours = parts[3] ? parseInt(parts[3], 10) : 0;
-  let minutes = parts[4] ? parseInt(parts[4], 10) : 0;
-  let seconds = parts[5] ? parseInt(parts[5], 10) : 0;
+  const hours = parts[3] ? parseInt(parts[3], 10) : 0;
+  const minutes = parts[4] ? parseInt(parts[4], 10) : 0;
+  const seconds = parts[5] ? parseInt(parts[5], 10) : 0;
   
   return new Date(year, month, day, hours, minutes, seconds).getTime();
 }
@@ -43,7 +43,7 @@ export async function parseExcelBankStatement(file: File): Promise<ParsedRecord[
         const worksheet = workbook.Sheets[firstSheetName];
         
         // Convert to JSON using array format to easily map standard columns
-        const rawJsonData = xlsx.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: "", raw: false, dateNF: 'dd-mm-yyyy hh:mm' });
+        const rawJsonData = xlsx.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, defval: "", raw: false, dateNF: 'dd-mm-yyyy hh:mm' });
         
         // Skip first 10 rows (header/metadata)
         const dataRows = rawJsonData.slice(10);
@@ -65,8 +65,8 @@ export async function parseExcelBankStatement(file: File): Promise<ParsedRecord[
               soTaiKhoan: String(row[4] || "").trim(),
               tenChuTaiKhoan: String(row[5] || "").trim(),
               chiTietGiaoDich,
-              tienRa: row[7] !== "" && row[7] !== undefined ? row[7] : "",
-              tienVao: row[8] !== "" && row[8] !== undefined ? row[8] : "",
+              tienRa: typeof row[7] === "number" ? row[7] : String(row[7] || ""),
+              tienVao: typeof row[8] === "number" ? row[8] : String(row[8] || ""),
               ghiChu: String(row[9] || "").trim(),
               searchText: chiTietGiaoDich,
               isFooter

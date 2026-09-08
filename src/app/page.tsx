@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, type CSSProperties } from "react";
 import { parseExcelBankStatement } from "@/lib/excelParser";
-import { Category, ParsedRecord, UploadLog, UploadLogRecord } from "@/lib/types";
+import { Category, GoogleSheetFile, GoogleSheetTab, ParsedRecord, SheetSyncRecord, UploadLog, UploadLogRecord } from "@/lib/types";
 import {
   UploadCloud,
   FileSpreadsheet,
@@ -21,7 +21,10 @@ import {
   BarChart2,
   X,
   ArrowLeft,
-  ChevronRight
+  ChevronRight,
+  Link2,
+  Send,
+  Unlink
 } from "lucide-react";
 import { 
   checkAuthStatus, 
@@ -31,10 +34,13 @@ import {
   saveAppliedCategoriesAction, 
   logoutAction,
   logFileUploadAction,
-  getUploadStatsAction
+  getUploadStatsAction,
+  getGoogleSheetFilesAction,
+  getGoogleSheetTabsAction,
+  syncCategoryToSheetAction
 } from "./actions";
 
-const cleanNumber = (val: any) => {
+const cleanNumber = (val: unknown) => {
   if (val === "" || val === null || val === undefined) return NaN;
   if (typeof val === 'number') return val;
   const str = String(val).trim();
@@ -62,8 +68,8 @@ const formatDateStr = (dateStr: string) => {
      year += 2000;
   }
   
-  let hours = parts[3] ? parseInt(parts[3], 10) : 0;
-  let minutes = parts[4] ? parseInt(parts[4], 10) : 0;
+  const hours = parts[3] ? parseInt(parts[3], 10) : 0;
+  const minutes = parts[4] ? parseInt(parts[4], 10) : 0;
   
   const mm = month.toString().padStart(2, '0');
   const dd = day.toString().padStart(2, '0');
@@ -106,7 +112,6 @@ export default function Home() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [appliedCategories, setAppliedCategories] = useState<Category[]>([]);
   const [records, setRecords] = useState<ParsedRecord[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
   
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [password, setPassword] = useState("");
@@ -121,7 +126,6 @@ export default function Home() {
         const data = await getCategoriesAction();
         setCategories(data.categories);
         setAppliedCategories(data.appliedCategories);
-        setIsLoaded(true);
       }
     }
     init();
@@ -136,7 +140,6 @@ export default function Home() {
       const data = await getCategoriesAction();
       setCategories(data.categories);
       setAppliedCategories(data.appliedCategories);
-      setIsLoaded(true);
     } else {
       setLoginError("Mật khẩu không đúng");
     }
@@ -152,6 +155,15 @@ export default function Home() {
   const [applyMessage, setApplyMessage] = useState("");
   const [copiedTab, setCopiedTab] = useState(false);
   const [copiedAll, setCopiedAll] = useState(false);
+  const [linkingCategory, setLinkingCategory] = useState<Category | null>(null);
+  const [sheetFiles, setSheetFiles] = useState<GoogleSheetFile[]>([]);
+  const [sheetTabs, setSheetTabs] = useState<GoogleSheetTab[]>([]);
+  const [selectedSpreadsheetId, setSelectedSpreadsheetId] = useState("");
+  const [selectedSheetId, setSelectedSheetId] = useState("");
+  const [isLoadingSheets, setIsLoadingSheets] = useState(false);
+  const [sheetLinkError, setSheetLinkError] = useState("");
+  const [syncingCategoryId, setSyncingCategoryId] = useState<string | null>(null);
+  const [sheetSyncMessage, setSheetSyncMessage] = useState("");
 
   // Stats Modal
   const [showStats, setShowStats] = useState(false);
@@ -166,6 +178,103 @@ export default function Home() {
     const data = await getUploadStatsAction();
     setStatsData(data);
     setIsLoadingStats(false);
+  };
+
+  const loadTabs = async (spreadsheetId: string, preferredSheetId = "") => {
+    setSelectedSpreadsheetId(spreadsheetId);
+    setSelectedSheetId("");
+    setSheetTabs([]);
+    setSheetLinkError("");
+    if (!spreadsheetId) return;
+
+    setIsLoadingSheets(true);
+    const result = await getGoogleSheetTabsAction(spreadsheetId);
+    if (result.success) {
+      setSheetTabs(result.tabs);
+      const preferredExists = result.tabs.some((tab) => String(tab.sheetId) === preferredSheetId);
+      setSelectedSheetId(preferredExists ? preferredSheetId : String(result.tabs[0]?.sheetId ?? ""));
+    } else {
+      setSheetLinkError(result.error);
+    }
+    setIsLoadingSheets(false);
+  };
+
+  const handleOpenSheetLink = async (category: Category) => {
+    setLinkingCategory(category);
+    setSheetFiles([]);
+    setSheetTabs([]);
+    setSheetLinkError("");
+    setSelectedSpreadsheetId(category.sheetLink?.spreadsheetId || "");
+    setSelectedSheetId(category.sheetLink ? String(category.sheetLink.sheetId) : "");
+    setIsLoadingSheets(true);
+
+    const result = await getGoogleSheetFilesAction();
+    if (!result.success) {
+      setSheetLinkError(result.error);
+      setIsLoadingSheets(false);
+      return;
+    }
+    setSheetFiles(result.files);
+    const initialFileId = category.sheetLink?.spreadsheetId || result.files[0]?.id || "";
+    setIsLoadingSheets(false);
+    await loadTabs(initialFileId, category.sheetLink ? String(category.sheetLink.sheetId) : "");
+  };
+
+  const handleSaveSheetLink = () => {
+    if (!linkingCategory) return;
+    const file = sheetFiles.find((item) => item.id === selectedSpreadsheetId);
+    const tab = sheetTabs.find((item) => String(item.sheetId) === selectedSheetId);
+    if (!file || !tab) {
+      setSheetLinkError("Hãy chọn đầy đủ file và tab cần liên kết.");
+      return;
+    }
+    const updated = categories.map((category) => category.id === linkingCategory.id ? {
+      ...category,
+      sheetLink: {
+        spreadsheetId: file.id,
+        spreadsheetName: file.name,
+        sheetId: tab.sheetId,
+        sheetName: tab.title,
+      },
+    } : category);
+    setCategories(updated);
+    saveCategoriesAction(updated);
+    setLinkingCategory(null);
+  };
+
+  const handleRemoveSheetLink = (categoryId: string) => {
+    const updated = categories.map((category) => category.id === categoryId
+      ? { ...category, sheetLink: undefined }
+      : category);
+    setCategories(updated);
+    saveCategoriesAction(updated);
+  };
+
+  const handleSyncCategory = async (category: Category) => {
+    const categoryRecords = computedRecords.filter((record) => record.matchedCategoryId === category.id && !record.isFooter);
+    if (!category.sheetLink || categoryRecords.length === 0) return;
+    setSyncingCategoryId(category.id);
+    setSheetSyncMessage("");
+    const payload: SheetSyncRecord[] = categoryRecords.map((record) => ({
+      soThamChieu: record.soThamChieu,
+      nganHang: record.nganHang,
+      soTaiKhoan: record.soTaiKhoan,
+      ngayGioGiaoDich: record.ngayGioGiaoDich,
+      tenChuTaiKhoan: record.tenChuTaiKhoan,
+      chiTietGiaoDich: record.chiTietGiaoDich,
+      tienRa: record.tienRa,
+      tienVao: record.tienVao,
+      ghiChu: record.ghiChu,
+    }));
+    const result = await syncCategoryToSheetAction(category.id, payload);
+    if (result.success) {
+      setSheetSyncMessage(`Đã gửi ${result.added} dòng sang ${category.sheetLink.spreadsheetName} / ${category.sheetLink.sheetName}; bỏ qua ${result.skipped} dòng trùng.`);
+    } else if ("actualHeaders" in result && "expectedHeaders" in result) {
+      setSheetSyncMessage(`Không thể gửi: header hiện tại [${result.actualHeaders.join(" | ")}] không đúng thứ tự chuẩn [${result.expectedHeaders.join(" | ")}].`);
+    } else {
+      setSheetSyncMessage(`Không thể gửi: ${result.error}`);
+    }
+    setSyncingCategoryId(null);
   };
 
   const handleAddOrEditCategory = () => {
@@ -285,7 +394,7 @@ export default function Home() {
       return `${stt}\t${rowStr}`;
     }).join("\n");
 
-    navigator.clipboard.writeText(rows);
+    navigator.clipboard.writeText(`${headers}\n${rows}`);
     setCopiedTab(true);
     setTimeout(() => setCopiedTab(false), 2000);
   };
@@ -316,24 +425,22 @@ export default function Home() {
       return `${groupName}\t${index + 1}\t${rowStr}`;
     }).join("\n");
 
-    navigator.clipboard.writeText(rows);
+    navigator.clipboard.writeText(`${headers}\n${rows}`);
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 2000);
   };
 
   // Compute matches
-  const computedRecords = useMemo(() => {
-    return classifyRecords(records, appliedCategories);
-  }, [records, appliedCategories]);
+  const computedRecords = classifyRecords(records, appliedCategories);
 
   // Filter records based on active tab
-  const filteredRecords = useMemo(() => {
+  const filteredRecords = (() => {
     if (activeTab === "all") return computedRecords;
     if (activeTab === "uncategorized")
       return computedRecords.filter((r) => !r.matchedCategoryId);
 
     return computedRecords.filter((r) => r.matchedCategoryId === activeTab);
-  }, [computedRecords, activeTab]);
+  })();
 
   // Auto-generate suggestions from chiTietGiaoDich
   const suggestedKeywords = useMemo(() => {
@@ -377,7 +484,7 @@ export default function Home() {
     });
 
     return Object.entries(counts)
-      .filter(([word, count]) => count > 1) // appear more than once
+      .filter(([, count]) => count > 1) // appear more than once
       .sort((a, b) => {
         const aHasTp = a[0].startsWith('tp');
         const bHasTp = b[0].startsWith('tp');
@@ -581,6 +688,33 @@ export default function Home() {
                       </span>
                     ))}
                   </div>
+                  <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                    <div className="min-w-0 text-xs text-gray-500">
+                      {cat.sheetLink ? (
+                        <span className="flex items-center gap-1.5 min-w-0 text-emerald-700" title={`${cat.sheetLink.spreadsheetName} / ${cat.sheetLink.sheetName}`}>
+                          <Link2 className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span className="truncate">{cat.sheetLink.spreadsheetName} / {cat.sheetLink.sheetName}</span>
+                        </span>
+                      ) : "Chưa liên kết Google Sheet"}
+                    </div>
+                    <div className="flex flex-shrink-0 gap-1">
+                      {cat.sheetLink && (
+                        <button
+                          onClick={() => handleRemoveSheetLink(cat.id)}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition cursor-pointer"
+                          title="Gỡ liên kết"
+                        >
+                          <Unlink className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleOpenSheetLink(cat)}
+                        className="px-2.5 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition cursor-pointer"
+                      >
+                        {cat.sheetLink ? "Đổi liên kết" : "Liên kết file"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ))}
               {categories.length === 0 && (
@@ -664,7 +798,22 @@ export default function Home() {
             <div className="flex-1 flex flex-col min-w-0 bg-white">
               {/* Header Copy Button */}
               {filteredRecords.length > 0 && (
-                <div className="p-2 border-b border-gray-100 flex justify-end gap-2 bg-white z-10 sticky top-0">
+                <div className="p-2 border-b border-gray-100 flex flex-wrap items-center justify-end gap-2 bg-white z-10 sticky top-0">
+                  {activeTab !== "all" && activeTab !== "uncategorized" && (() => {
+                    const category = appliedCategories.find((item) => item.id === activeTab);
+                    if (!category) return null;
+                    return (
+                      <button
+                        onClick={() => handleSyncCategory(category)}
+                        disabled={!category.sheetLink || syncingCategoryId === category.id}
+                        title={category.sheetLink ? `Gửi sang ${category.sheetLink.spreadsheetName} / ${category.sheetLink.sheetName}` : "Hãy liên kết Google Sheet trong phần Cài đặt thiện pháp và bấm Áp dụng phân loại"}
+                        className="mr-auto flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed transition shadow-sm"
+                      >
+                        {syncingCategoryId === category.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                        {syncingCategoryId === category.id ? "Đang gửi..." : "Gửi sang Google Sheet"}
+                      </button>
+                    );
+                  })()}
                   <button
                     onClick={handleCopyAllData}
                     className="flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition shadow-sm"
@@ -697,6 +846,12 @@ export default function Home() {
                       </>
                     )}
                   </button>
+                </div>
+              )}
+
+              {sheetSyncMessage && (
+                <div className={`mx-3 mt-3 px-3 py-2 rounded-lg border text-sm ${sheetSyncMessage.startsWith("Đã gửi") ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+                  {sheetSyncMessage}
                 </div>
               )}
 
@@ -779,7 +934,7 @@ export default function Home() {
                               baseClass += " whitespace-nowrap";
                             }
 
-                            const styleObj: any = {
+                            const styleObj: CSSProperties = {
                               left: col.left !== undefined ? `${col.left}px` : undefined,
                               width: col.width ? `${col.width}px` : undefined,
                               minWidth: col.width ? `${col.width}px` : undefined,
@@ -847,6 +1002,68 @@ export default function Home() {
           </section>
         </div>
       </main>
+
+      {/* GOOGLE SHEET LINK MODAL */}
+      {linkingCategory && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <div>
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <Link2 className="w-5 h-5 text-indigo-600" />
+                  Liên kết Google Sheet
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">Thiện pháp: {linkingCategory.name}</p>
+              </div>
+              <button onClick={() => setLinkingCategory(null)} className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              {sheetLinkError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">{sheetLinkError}</div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">File Google Sheet trong folder được chia sẻ</label>
+                <select
+                  value={selectedSpreadsheetId}
+                  onChange={(event) => loadTabs(event.target.value)}
+                  disabled={isLoadingSheets && sheetFiles.length === 0}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-100"
+                >
+                  <option value="">{isLoadingSheets && sheetFiles.length === 0 ? "Đang tải danh sách file..." : "Chọn file"}</option>
+                  {sheetFiles.map((file) => <option key={file.id} value={file.id}>{file.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Tab nhận giao dịch</label>
+                <select
+                  value={selectedSheetId}
+                  onChange={(event) => setSelectedSheetId(event.target.value)}
+                  disabled={!selectedSpreadsheetId || isLoadingSheets}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-100"
+                >
+                  <option value="">{isLoadingSheets ? "Đang tải các tab..." : "Chọn tab"}</option>
+                  {sheetTabs.filter((tab) => !tab.hidden).map((tab) => <option key={tab.sheetId} value={tab.sheetId}>{tab.title}</option>)}
+                </select>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg p-3 leading-relaxed">
+                Header bắt buộc theo đúng thứ tự: STT · Thời gian · Chủ tài khoản · Nội dung · Tiền ra · Tiền vào · Ghi chú · Quỹ
+              </div>
+            </div>
+            <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50">
+              <button onClick={() => setLinkingCategory(null)} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-200 rounded-lg cursor-pointer">Hủy</button>
+              <button
+                onClick={handleSaveSheetLink}
+                disabled={!selectedSpreadsheetId || !selectedSheetId || isLoadingSheets}
+                className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 rounded-lg cursor-pointer disabled:cursor-not-allowed"
+              >
+                Lưu liên kết
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* STATS MODAL */}
       {showStats && (

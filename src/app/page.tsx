@@ -692,50 +692,46 @@ export default function Home() {
             </div>
 
             {/* List of draft categories */}
-            <div className="flex-1 overflow-y-auto space-y-3 max-h-[500px] mb-4 pr-1">
+            <div className="mb-4 max-h-[calc(100vh-330px)] min-h-[220px] flex-1 space-y-2 overflow-y-auto pr-1">
               {categories.map((cat) => (
-                <div key={cat.id} className="border border-gray-200 rounded-xl p-3 hover:shadow-sm transition bg-white">
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-medium text-sm text-gray-900">{cat.name}</h3>
-                    <div className="flex gap-1 -mt-1">
+                <div key={cat.id} className="rounded-lg border border-gray-200 bg-white p-2.5 transition hover:border-indigo-200 hover:shadow-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="min-w-0 truncate text-sm font-semibold text-gray-900" title={cat.name}>{cat.name}</h3>
+                    <div className="flex shrink-0 gap-0.5">
                       <button
                         onClick={() => handleEditCategory(cat)}
-                        className="text-gray-400 hover:text-blue-500 transition p-1 cursor-pointer"
+                        className="cursor-pointer rounded p-1 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600"
                         title="Sửa"
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setCategoryToDelete(cat)}
-                        className="text-gray-400 hover:text-red-500 transition p-1 cursor-pointer"
+                        className="cursor-pointer rounded p-1 text-gray-400 transition hover:bg-red-50 hover:text-red-600"
                         title="Xóa"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {cat.keywords.map((kw, i) => (
-                      <span key={i} className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 text-[10px] px-2 py-1 rounded-md font-medium">
-                        <Tag className="w-3 h-3" />
-                        {kw}
-                      </span>
-                    ))}
+                  <div className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-gray-500" title={cat.keywords.join(", ")}>
+                    <Tag className="h-3 w-3 shrink-0 text-indigo-400" />
+                    <span className="truncate">{cat.keywords.join(", ")}</span>
                   </div>
-                  <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
-                    <div className="min-w-0 text-xs text-gray-500">
+                  <div className="mt-2 flex items-center justify-between gap-2 border-t border-gray-100 pt-2">
+                    <div className="min-w-0 text-[11px] text-gray-500">
                       {cat.sheetLink ? (
-                        <span className="flex items-center gap-1.5 min-w-0 text-emerald-700" title={`${cat.sheetLink.spreadsheetName} / ${cat.sheetLink.sheetName}`}>
-                          <Link2 className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="flex min-w-0 items-center gap-1 text-emerald-700" title={`${cat.sheetLink.spreadsheetName} / ${cat.sheetLink.sheetName}`}>
+                          <Link2 className="h-3 w-3 flex-shrink-0" />
                           <span className="truncate">{cat.sheetLink.spreadsheetName} / {cat.sheetLink.sheetName}</span>
                         </span>
-                      ) : "Chưa liên kết Google Sheet"}
+                      ) : <span className="text-gray-400">Chưa liên kết</span>}
                     </div>
-                    <div className="flex flex-shrink-0 gap-1">
+                    <div className="flex flex-shrink-0 gap-0.5">
                       {cat.sheetLink && (
                         <button
                           onClick={() => handleRemoveSheetLink(cat.id)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition cursor-pointer"
+                          className="cursor-pointer rounded p-1 text-gray-400 transition hover:bg-red-50 hover:text-red-600"
                           title="Gỡ liên kết"
                         >
                           <Unlink className="w-3.5 h-3.5" />
@@ -743,7 +739,7 @@ export default function Home() {
                       )}
                       <button
                         onClick={() => handleOpenSheetLink(cat)}
-                        className="px-2.5 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition cursor-pointer"
+                        className="cursor-pointer rounded-md bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 transition hover:bg-indigo-100"
                       >
                         {cat.sheetLink ? "Đổi liên kết" : "Liên kết file"}
                       </button>
@@ -796,72 +792,80 @@ export default function Home() {
         <div className="order-2 min-w-0 lg:col-span-7 lg:col-start-1 lg:row-start-2">
           <section className="relative flex min-h-[500px] flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
 
-            {/* Horizontal result filters */}
+            {/* Result filter */}
             <div className="w-full flex-shrink-0 border-b border-gray-200 bg-gray-50">
-              {/* Tabs */}
-              <div className="flex items-stretch gap-2 overflow-x-auto p-3">
-                <button
-                  onClick={() => setActiveTab("all")}
-                  aria-current={activeTab === "all" ? "page" : undefined}
-                  className={`min-w-max flex-shrink-0 cursor-pointer rounded-lg border-2 px-3 py-2 text-left text-sm font-medium transition-all ${activeTab === "all" ? "bg-indigo-600 text-white font-semibold shadow-md border-indigo-700 ring-2 ring-indigo-200" : "text-gray-600 border-transparent hover:bg-gray-200/50"
-                    }`}
-                >
-                  Tất cả ({computedRecords.filter(r => !r.isFooter).length})
-                </button>
-                {appliedCategories.map((cat) => {
-                  const sheetStatus = categorySheetStatuses.get(cat.id) || { recordCount: 0, state: "unlinked" as const };
-                  const isActive = activeTab === cat.id;
-                  const needsSync = sheetStatus.state === "pending";
-                  const tabColor = isActive
-                    ? "bg-indigo-600 text-white shadow-md border-2 border-indigo-700 ring-2 ring-indigo-200"
-                    : needsSync
-                      ? "bg-red-50 text-red-700 border-2 border-red-200 hover:bg-red-100"
-                      : "text-gray-600 hover:bg-gray-200/50 border-2 border-transparent";
+              <div className="p-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Tình trạng gửi theo thiện pháp</p>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                  <button
+                    onClick={() => setActiveTab("all")}
+                    aria-current={activeTab === "all" ? "page" : undefined}
+                    className={`min-w-0 cursor-pointer rounded-lg border px-3 py-2 text-left transition ${activeTab === "all" ? "border-indigo-600 bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200" : "border-gray-200 bg-white text-gray-700 hover:border-indigo-300"}`}
+                  >
+                    <span className="block truncate text-sm font-semibold">Tất cả</span>
+                    <span className={`text-[11px] ${activeTab === "all" ? "text-indigo-100" : "text-gray-500"}`}>
+                      {computedRecords.filter((record) => !record.isFooter).length} giao dịch
+                    </span>
+                  </button>
 
-                  return (
-                    <button
-                      key={cat.id}
-                      onClick={() => setActiveTab(cat.id)}
-                      aria-current={isActive ? "page" : undefined}
-                      className={`min-w-[180px] max-w-[240px] flex-shrink-0 cursor-pointer rounded-lg px-3 py-2 text-left transition-all ${tabColor}`}
-                    >
-                      <span className={`flex items-center justify-between gap-2 text-sm ${isActive ? "font-semibold" : "font-medium"}`}>
-                        <span className="truncate">{cat.name}</span>
-                        <span className="shrink-0">({sheetStatus.recordCount})</span>
-                      </span>
-                      {sheetStatus.state === "synced" && (
-                        <span className={`mt-1 flex items-center gap-1 text-[11px] font-medium ${isActive ? "text-emerald-100" : "text-emerald-600"}`}>
-                          <CheckCircle className="h-3 w-3" /> Đã gửi Google Sheet
+                  {appliedCategories.map((category) => {
+                    const status = categorySheetStatuses.get(category.id) || { recordCount: 0, state: "unlinked" as const };
+                    const isActive = activeTab === category.id;
+                    const statusColor = status.state === "synced"
+                      ? "border-emerald-300 bg-emerald-100 text-emerald-800"
+                      : status.state === "pending"
+                        ? "border-red-300 bg-red-100 text-red-800"
+                        : status.state === "empty"
+                          ? "border-emerald-200 bg-white text-gray-700"
+                          : "border-gray-200 bg-white text-gray-600";
+
+                    return (
+                      <button
+                        key={category.id}
+                        onClick={() => setActiveTab(category.id)}
+                        aria-current={isActive ? "page" : undefined}
+                        className={`min-w-0 cursor-pointer rounded-lg border px-3 py-2 text-left transition hover:shadow-sm ${statusColor} ${isActive ? "ring-2 ring-indigo-500 ring-offset-1" : ""}`}
+                      >
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm font-semibold" title={category.name}>{category.name}</span>
+                          <span className="shrink-0 text-xs font-bold">{status.recordCount}</span>
                         </span>
-                      )}
-                      {sheetStatus.state === "pending" && (
-                        <span className={`mt-1 flex w-fit items-center gap-1 text-[11px] font-medium ${isActive ? "rounded bg-white px-1.5 py-0.5 text-red-600" : "text-red-600"}`}>
-                          <CircleAlert className="h-3 w-3" /> Có giao dịch chưa gửi
-                        </span>
-                      )}
-                      {sheetStatus.state === "empty" && (
-                        <span className={`mt-1 flex items-center gap-1 text-[11px] font-medium ${isActive ? "text-indigo-100" : "text-emerald-600"}`}>
-                          <Link2 className="h-3 w-3" /> Đã liên kết · Chưa có giao dịch
-                        </span>
-                      )}
-                      {sheetStatus.state === "unlinked" && (
-                        <span className={`mt-1 flex items-center gap-1 text-[11px] font-normal ${isActive ? "text-indigo-100" : "text-gray-400"}`}>
-                          <Unlink className="h-3 w-3" /> Chưa liên kết Google Sheet
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-                <button
-                  onClick={() => setActiveTab("uncategorized")}
-                  aria-current={activeTab === "uncategorized" ? "page" : undefined}
-                  className={`min-w-max flex-shrink-0 cursor-pointer rounded-lg border-2 px-3 py-2 text-left text-sm font-medium transition-all ${activeTab === "uncategorized" ? "bg-indigo-600 text-white font-semibold shadow-md border-indigo-700 ring-2 ring-indigo-200" : "text-gray-600 border-transparent hover:bg-gray-200/50"
-                    }`}
-                >
-                  Chưa phân loại ({computedRecords.filter(r => !r.matchedCategoryId && !r.isFooter).length})
-                </button>
+                        {status.state === "synced" && (
+                          <span className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+                            <CheckCircle className="h-3 w-3" /> Đã gửi
+                          </span>
+                        )}
+                        {status.state === "pending" && (
+                          <span className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-red-700">
+                            <CircleAlert className="h-3 w-3" /> Chưa gửi
+                          </span>
+                        )}
+                        {status.state === "empty" && (
+                          <span className="mt-0.5 flex items-center gap-1 text-[11px] text-emerald-700">
+                            <Link2 className="h-3 w-3" /> Đã liên kết · Chưa có GD
+                          </span>
+                        )}
+                        {status.state === "unlinked" && (
+                          <span className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-400">
+                            <Unlink className="h-3 w-3" /> Chưa liên kết
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    onClick={() => setActiveTab("uncategorized")}
+                    aria-current={activeTab === "uncategorized" ? "page" : undefined}
+                    className={`min-w-0 cursor-pointer rounded-lg border px-3 py-2 text-left transition ${activeTab === "uncategorized" ? "border-indigo-600 bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200" : "border-gray-200 bg-white text-gray-700 hover:border-indigo-300"}`}
+                  >
+                    <span className="block truncate text-sm font-semibold">Chưa phân loại</span>
+                    <span className={`text-[11px] ${activeTab === "uncategorized" ? "text-indigo-100" : "text-gray-500"}`}>
+                      {computedRecords.filter((record) => !record.matchedCategoryId && !record.isFooter).length} giao dịch
+                    </span>
+                  </button>
+                </div>
               </div>
-
             </div>
 
             {/* Table Area */}

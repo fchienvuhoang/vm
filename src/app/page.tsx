@@ -22,6 +22,7 @@ import {
   X,
   ArrowLeft,
   ChevronRight,
+  ChevronDown,
   Link2,
   Send,
   Unlink
@@ -108,6 +109,13 @@ const classifyRecords = (records: ParsedRecord[], categories: Category[]) => {
   });
 };
 
+const normalizeSearchText = (value: string) => value
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .replace(/đ/g, "d")
+  .replace(/Đ/g, "D")
+  .toLowerCase();
+
 export default function Home() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [appliedCategories, setAppliedCategories] = useState<Category[]>([]);
@@ -160,6 +168,8 @@ export default function Home() {
   const [sheetTabs, setSheetTabs] = useState<GoogleSheetTab[]>([]);
   const [selectedSpreadsheetId, setSelectedSpreadsheetId] = useState("");
   const [selectedSheetId, setSelectedSheetId] = useState("");
+  const [sheetFileSearch, setSheetFileSearch] = useState("");
+  const [isSheetFileDropdownOpen, setIsSheetFileDropdownOpen] = useState(false);
   const [isLoadingSheets, setIsLoadingSheets] = useState(false);
   const [sheetLinkError, setSheetLinkError] = useState("");
   const [syncingCategoryId, setSyncingCategoryId] = useState<string | null>(null);
@@ -206,6 +216,8 @@ export default function Home() {
     setSheetLinkError("");
     setSelectedSpreadsheetId(category.sheetLink?.spreadsheetId || "");
     setSelectedSheetId(category.sheetLink ? String(category.sheetLink.sheetId) : "");
+    setSheetFileSearch(category.sheetLink?.spreadsheetName || "");
+    setIsSheetFileDropdownOpen(false);
     setIsLoadingSheets(true);
 
     const result = await getGoogleSheetFilesAction();
@@ -216,6 +228,8 @@ export default function Home() {
     }
     setSheetFiles(result.files);
     const initialFileId = category.sheetLink?.spreadsheetId || result.files[0]?.id || "";
+    const initialFile = result.files.find((file) => file.id === initialFileId);
+    setSheetFileSearch(initialFile?.name || "");
     setIsLoadingSheets(false);
     await loadTabs(initialFileId, category.sheetLink ? String(category.sheetLink.sheetId) : "");
   };
@@ -269,8 +283,6 @@ export default function Home() {
     const result = await syncCategoryToSheetAction(category.id, payload);
     if (result.success) {
       setSheetSyncMessage(`Đã gửi ${result.added} dòng sang ${category.sheetLink.spreadsheetName} / ${category.sheetLink.sheetName}; bỏ qua ${result.skipped} dòng trùng.`);
-    } else if ("actualHeaders" in result && "expectedHeaders" in result) {
-      setSheetSyncMessage(`Không thể gửi: header hiện tại [${result.actualHeaders.join(" | ")}] không đúng thứ tự chuẩn [${result.expectedHeaders.join(" | ")}].`);
     } else {
       setSheetSyncMessage(`Không thể gửi: ${result.error}`);
     }
@@ -496,6 +508,12 @@ export default function Home() {
       .slice(0, 15) // top 15 suggestions
       .map(entry => entry[0]);
   }, [records]);
+
+  const filteredSheetFiles = useMemo(() => {
+    const query = normalizeSearchText(sheetFileSearch.trim());
+    if (!query) return sheetFiles;
+    return sheetFiles.filter((file) => normalizeSearchText(file.name).includes(query));
+  }, [sheetFiles, sheetFileSearch]);
 
   if (isAuthenticated === null) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50"><Loader2 className="w-8 h-8 animate-spin text-indigo-600" /></div>;
@@ -1025,15 +1043,78 @@ export default function Home() {
               )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">File Google Sheet trong folder được chia sẻ</label>
-                <select
-                  value={selectedSpreadsheetId}
-                  onChange={(event) => loadTabs(event.target.value)}
-                  disabled={isLoadingSheets && sheetFiles.length === 0}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-100"
+                <div
+                  className="relative"
+                  onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                      setIsSheetFileDropdownOpen(false);
+                    }
+                  }}
                 >
-                  <option value="">{isLoadingSheets && sheetFiles.length === 0 ? "Đang tải danh sách file..." : "Chọn file"}</option>
-                  {sheetFiles.map((file) => <option key={file.id} value={file.id}>{file.name}</option>)}
-                </select>
+                  <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <input
+                    id="google-sheet-file-search"
+                    role="combobox"
+                    aria-expanded={isSheetFileDropdownOpen}
+                    aria-controls="google-sheet-file-options"
+                    aria-autocomplete="list"
+                    value={sheetFileSearch}
+                    onFocus={() => setIsSheetFileDropdownOpen(true)}
+                    onChange={(event) => {
+                      const nextSearch = event.target.value;
+                      setSheetFileSearch(nextSearch);
+                      setIsSheetFileDropdownOpen(true);
+
+                      const selectedFile = sheetFiles.find((file) => file.id === selectedSpreadsheetId);
+                      if (!selectedFile || nextSearch !== selectedFile.name) {
+                        setSelectedSpreadsheetId("");
+                        setSelectedSheetId("");
+                        setSheetTabs([]);
+                      }
+                    }}
+                    disabled={isLoadingSheets && sheetFiles.length === 0}
+                    placeholder={isLoadingSheets && sheetFiles.length === 0 ? "Đang tải danh sách file..." : "Gõ để tìm file..."}
+                    autoComplete="off"
+                    className="w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-9 pr-10 text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Mở danh sách file Google Sheet"
+                    onClick={() => setIsSheetFileDropdownOpen((isOpen) => !isOpen)}
+                    disabled={isLoadingSheets && sheetFiles.length === 0}
+                    className="absolute right-0 top-0 flex h-full w-10 cursor-pointer items-center justify-center text-gray-400 disabled:cursor-not-allowed"
+                  >
+                    <ChevronDown className={`h-4 w-4 transition-transform ${isSheetFileDropdownOpen ? "rotate-180" : ""}`} />
+                  </button>
+
+                  {isSheetFileDropdownOpen && !(isLoadingSheets && sheetFiles.length === 0) && (
+                    <div
+                      id="google-sheet-file-options"
+                      role="listbox"
+                      className="absolute z-40 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-lg"
+                    >
+                      {filteredSheetFiles.length > 0 ? filteredSheetFiles.map((file) => (
+                        <button
+                          key={file.id}
+                          type="button"
+                          role="option"
+                          aria-selected={file.id === selectedSpreadsheetId}
+                          onClick={() => {
+                            setSheetFileSearch(file.name);
+                            setIsSheetFileDropdownOpen(false);
+                            void loadTabs(file.id);
+                          }}
+                          className={`flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-indigo-50 ${file.id === selectedSpreadsheetId ? "bg-indigo-50 font-medium text-indigo-700" : "text-gray-700"}`}
+                        >
+                          <span className="truncate">{file.name}</span>
+                          {file.id === selectedSpreadsheetId && <Check className="ml-2 h-4 w-4 shrink-0" />}
+                        </button>
+                      )) : (
+                        <p className="px-3 py-3 text-center text-sm text-gray-500">Không tìm thấy file phù hợp</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Tab nhận giao dịch</label>
@@ -1048,7 +1129,7 @@ export default function Home() {
                 </select>
               </div>
               <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg p-3 leading-relaxed">
-                Header bắt buộc theo đúng thứ tự: STT · Thời gian · Chủ tài khoản · Nội dung · Tiền ra · Tiền vào · Ghi chú · Quỹ
+                Dữ liệu luôn được nối tiếp ở cuối sheet theo thứ tự cột: STT · Thời gian · Chủ tài khoản · Nội dung · Tiền ra · Tiền vào · Ghi chú · Quỹ. Các dòng đã có sẽ không bị ghi đè.
               </div>
             </div>
             <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50">

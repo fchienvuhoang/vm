@@ -4,17 +4,6 @@ import { createHash } from "node:crypto";
 import { google } from "googleapis";
 import { SheetLink, SheetSyncRecord } from "@/lib/types";
 
-export const STANDARD_SHEET_HEADERS = [
-  "STT",
-  "Thời gian",
-  "Chủ tài khoản",
-  "Nội dung",
-  "Tiền ra",
-  "Tiền vào",
-  "Ghi chú",
-  "Quỹ",
-] as const;
-
 const SYNC_SHEET_NAME = "_VIMUTTI_SYNC";
 
 function getGoogleAuth() {
@@ -102,21 +91,6 @@ export async function ensureSyncSheet(spreadsheetId: string) {
 export async function syncRecordsToSheet(link: SheetLink, categoryName: string, records: SheetSyncRecord[]) {
   const { sheets } = getGoogleClients();
   const target = quoteSheetName(link.sheetName);
-  const headerResponse = await sheets.spreadsheets.values.get({
-    spreadsheetId: link.spreadsheetId,
-    range: `${target}!A1:H1`,
-  });
-  const actualHeaders = (headerResponse.data.values?.[0] || []).map((value) => String(value).trim());
-  const headersValid = STANDARD_SHEET_HEADERS.every((header, index) => actualHeaders[index] === header)
-    && actualHeaders.length === STANDARD_SHEET_HEADERS.length;
-  if (!headersValid) {
-    return {
-      success: false as const,
-      error: "HEADER_INVALID" as const,
-      expectedHeaders: [...STANDARD_SHEET_HEADERS],
-      actualHeaders,
-    };
-  }
 
   await ensureSyncSheet(link.spreadsheetId);
   const syncRange = `${quoteSheetName(SYNC_SHEET_NAME)}!A2:B`;
@@ -132,13 +106,20 @@ export async function syncRecordsToSheet(link: SheetLink, categoryName: string, 
     return { success: true as const, added: 0, skipped: records.length };
   }
 
-  const firstColumn = await sheets.spreadsheets.values.get({
+  // Read all destination columns so the new rows always start below every
+  // existing value, even when column A contains gaps.
+  const targetResponse = await sheets.spreadsheets.values.get({
     spreadsheetId: link.spreadsheetId,
-    range: `${target}!A:A`,
+    range: `${target}!A:H`,
   });
-  const startIndex = Math.max(0, (firstColumn.data.values?.length || 1) - 1);
+  const currentValues = targetResponse.data.values || [];
+  const nextRowNumber = currentValues.length + 1;
+  const lastSequenceNumber = currentValues.reduce((largest, row) => {
+    const candidate = Number(row[0]);
+    return Number.isInteger(candidate) && candidate > largest ? candidate : largest;
+  }, 0);
   const values = uniqueRecords.map((record, index) => [
-    startIndex + index + 1,
+    lastSequenceNumber + index + 1,
     record.ngayGioGiaoDich,
     record.tenChuTaiKhoan,
     buildTransactionContent(record),
@@ -148,31 +129,38 @@ export async function syncRecordsToSheet(link: SheetLink, categoryName: string, 
     categoryName,
   ]);
 
-  await sheets.spreadsheets.values.append({
+  // INSERT_ROWS appends new physical rows and never overwrites existing cell
+  // values. Starting below the last used row also avoids Google selecting an
+  // earlier logical table when the sheet contains blank rows.
+  const appendResponse = await sheets.spreadsheets.values.append({
     spreadsheetId: link.spreadsheetId,
-    range: `${target}!A:H`,
+    range: `${target}!A${nextRowNumber}:H`,
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
     requestBody: { values },
   });
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId: link.spreadsheetId,
-    requestBody: {
-      requests: [{
-        repeatCell: {
-          range: {
-            sheetId: link.sheetId,
-            startRowIndex: startIndex + 1,
-            endRowIndex: startIndex + 1 + uniqueRecords.length,
-            startColumnIndex: 3,
-            endColumnIndex: 4,
+  const appendedRange = appendResponse.data.updates?.updatedRange || "";
+  const appendedRows = appendedRange.match(/!A(\d+):H(\d+)$/);
+  if (appendedRows) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: link.spreadsheetId,
+      requestBody: {
+        requests: [{
+          repeatCell: {
+            range: {
+              sheetId: link.sheetId,
+              startRowIndex: Number(appendedRows[1]) - 1,
+              endRowIndex: Number(appendedRows[2]),
+              startColumnIndex: 3,
+              endColumnIndex: 4,
+            },
+            cell: { userEnteredFormat: { wrapStrategy: "WRAP" } },
+            fields: "userEnteredFormat.wrapStrategy",
           },
-          cell: { userEnteredFormat: { wrapStrategy: "WRAP" } },
-          fields: "userEnteredFormat.wrapStrategy",
-        },
-      }],
-    },
-  });
+        }],
+      },
+    });
+  }
   await sheets.spreadsheets.values.append({
     spreadsheetId: link.spreadsheetId,
     range: `${quoteSheetName(SYNC_SHEET_NAME)}!A:C`,

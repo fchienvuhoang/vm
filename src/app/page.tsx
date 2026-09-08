@@ -316,7 +316,7 @@ export default function Home() {
     const result = await syncCategoryToSheetAction(category.id, payload);
     if (result.success) {
       setSuccessfulSheetSyncSignatures((current) => ({ ...current, [category.id]: syncSignature }));
-      setSheetSyncMessage(`Đã gửi ${result.added} dòng sang ${category.sheetLink.spreadsheetName} / ${category.sheetLink.sheetName}.`);
+      setSheetSyncMessage(`Đã gửi ${result.added} dòng sang ${category.sheetLink.spreadsheetName} / ${category.sheetLink.sheetName}${result.skipped > 0 ? `; bỏ qua ${result.skipped} dòng trùng nội dung và mã tham chiếu` : ""}.`);
     } else {
       setSheetSyncMessage(`Không thể gửi: ${result.error}`);
     }

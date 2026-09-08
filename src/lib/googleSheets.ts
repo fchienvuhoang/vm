@@ -35,6 +35,15 @@ export function buildTransactionContent(record: SheetSyncRecord) {
   return content ? `${content}\nSố tham chiếu: ${reference}` : `Số tham chiếu: ${reference}`;
 }
 
+function normalizeTransactionContent(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n+/g, "\n")
+    .toLowerCase();
+}
+
 function quoteSheetName(name: string) {
   return `'${name.replace(/'/g, "''")}'`;
 }
@@ -55,11 +64,27 @@ export async function syncRecordsToSheet(link: SheetLink, categoryName: string, 
   });
   const currentValues = targetResponse.data.values || [];
   const nextRowNumber = currentValues.length + 1;
+  const existingContents = new Set(
+    currentValues
+      .map((row) => normalizeTransactionContent(row[3]))
+      .filter(Boolean),
+  );
+  const uniqueRecords = records.filter((record) => {
+    const contentKey = normalizeTransactionContent(buildTransactionContent(record));
+    if (!contentKey || existingContents.has(contentKey)) return false;
+    existingContents.add(contentKey);
+    return true;
+  });
+
+  if (uniqueRecords.length === 0) {
+    return { success: true as const, added: 0, skipped: records.length };
+  }
+
   const lastSequenceNumber = currentValues.reduce((largest, row) => {
     const candidate = Number(row[0]);
     return Number.isInteger(candidate) && candidate > largest ? candidate : largest;
   }, 0);
-  const values = records.map((record, index) => [
+  const values = uniqueRecords.map((record, index) => [
     lastSequenceNumber + index + 1,
     record.ngayGioGiaoDich,
     record.tenChuTaiKhoan,
@@ -102,5 +127,5 @@ export async function syncRecordsToSheet(link: SheetLink, categoryName: string, 
       },
     });
   }
-  return { success: true as const, added: records.length, skipped: 0 };
+  return { success: true as const, added: uniqueRecords.length, skipped: records.length - uniqueRecords.length };
 }

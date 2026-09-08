@@ -23,6 +23,8 @@ import {
   ArrowLeft,
   ChevronRight,
   ChevronDown,
+  CircleAlert,
+  ExternalLink,
   Link2,
   Send,
   Unlink
@@ -116,6 +118,36 @@ const normalizeSearchText = (value: string) => value
   .replace(/Đ/g, "D")
   .toLowerCase();
 
+const buildSheetSyncPayload = (records: ParsedRecord[], categoryId: string): SheetSyncRecord[] => records
+  .filter((record) => record.matchedCategoryId === categoryId && !record.isFooter)
+  .map((record) => ({
+    soThamChieu: record.soThamChieu,
+    nganHang: record.nganHang,
+    soTaiKhoan: record.soTaiKhoan,
+    ngayGioGiaoDich: record.ngayGioGiaoDich,
+    tenChuTaiKhoan: record.tenChuTaiKhoan,
+    chiTietGiaoDich: record.chiTietGiaoDich,
+    tienRa: record.tienRa,
+    tienVao: record.tienVao,
+    ghiChu: record.ghiChu,
+  }));
+
+const createSheetSyncSignature = (category: Category, payload: SheetSyncRecord[]) => JSON.stringify([
+  category.sheetLink?.spreadsheetId,
+  category.sheetLink?.sheetId,
+  category.name,
+  payload,
+]);
+
+const getGoogleSheetUrl = (category: Category) => category.sheetLink
+  ? `https://docs.google.com/spreadsheets/d/${encodeURIComponent(category.sheetLink.spreadsheetId)}/edit#gid=${category.sheetLink.sheetId}`
+  : "";
+
+type CategorySheetStatus = {
+  recordCount: number;
+  state: "unlinked" | "empty" | "pending" | "synced";
+};
+
 export default function Home() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [appliedCategories, setAppliedCategories] = useState<Category[]>([]);
@@ -174,6 +206,7 @@ export default function Home() {
   const [sheetLinkError, setSheetLinkError] = useState("");
   const [syncingCategoryId, setSyncingCategoryId] = useState<string | null>(null);
   const [sheetSyncMessage, setSheetSyncMessage] = useState("");
+  const [successfulSheetSyncSignatures, setSuccessfulSheetSyncSignatures] = useState<Record<string, string>>({});
 
   // Stats Modal
   const [showStats, setShowStats] = useState(false);
@@ -253,6 +286,11 @@ export default function Home() {
     } : category);
     setCategories(updated);
     saveCategoriesAction(updated);
+    setSuccessfulSheetSyncSignatures((current) => {
+      const next = { ...current };
+      delete next[linkingCategory.id];
+      return next;
+    });
     setLinkingCategory(null);
   };
 
@@ -262,26 +300,22 @@ export default function Home() {
       : category);
     setCategories(updated);
     saveCategoriesAction(updated);
+    setSuccessfulSheetSyncSignatures((current) => {
+      const next = { ...current };
+      delete next[categoryId];
+      return next;
+    });
   };
 
   const handleSyncCategory = async (category: Category) => {
-    const categoryRecords = computedRecords.filter((record) => record.matchedCategoryId === category.id && !record.isFooter);
-    if (!category.sheetLink || categoryRecords.length === 0) return;
+    const payload = buildSheetSyncPayload(computedRecords, category.id);
+    if (!category.sheetLink || payload.length === 0) return;
+    const syncSignature = createSheetSyncSignature(category, payload);
     setSyncingCategoryId(category.id);
     setSheetSyncMessage("");
-    const payload: SheetSyncRecord[] = categoryRecords.map((record) => ({
-      soThamChieu: record.soThamChieu,
-      nganHang: record.nganHang,
-      soTaiKhoan: record.soTaiKhoan,
-      ngayGioGiaoDich: record.ngayGioGiaoDich,
-      tenChuTaiKhoan: record.tenChuTaiKhoan,
-      chiTietGiaoDich: record.chiTietGiaoDich,
-      tienRa: record.tienRa,
-      tienVao: record.tienVao,
-      ghiChu: record.ghiChu,
-    }));
     const result = await syncCategoryToSheetAction(category.id, payload);
     if (result.success) {
+      setSuccessfulSheetSyncSignatures((current) => ({ ...current, [category.id]: syncSignature }));
       setSheetSyncMessage(`Đã gửi ${result.added} dòng sang ${category.sheetLink.spreadsheetName} / ${category.sheetLink.sheetName}; bỏ qua ${result.skipped} dòng trùng.`);
     } else {
       setSheetSyncMessage(`Không thể gửi: ${result.error}`);
@@ -444,6 +478,18 @@ export default function Home() {
 
   // Compute matches
   const computedRecords = classifyRecords(records, appliedCategories);
+
+  const categorySheetStatuses = new Map<string, CategorySheetStatus>(appliedCategories.map((category) => {
+    const payload = buildSheetSyncPayload(computedRecords, category.id);
+    let state: CategorySheetStatus["state"] = "unlinked";
+    if (category.sheetLink && payload.length === 0) {
+      state = "empty";
+    } else if (category.sheetLink) {
+      const signature = createSheetSyncSignature(category, payload);
+      state = successfulSheetSyncSignatures[category.id] === signature ? "synced" : "pending";
+    }
+    return [category.id, { recordCount: payload.length, state }];
+  }));
 
   // Filter records based on active tab
   const filteredRecords = (() => {
@@ -791,16 +837,52 @@ export default function Home() {
                 >
                   Tất cả ({computedRecords.filter(r => !r.isFooter).length})
                 </button>
-                {appliedCategories.map(cat => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setActiveTab(cat.id)}
-                    className={`w-full text-left flex-shrink-0 cursor-pointer px-3 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === cat.id ? "bg-white text-indigo-600 shadow-sm border border-gray-200/60" : "text-gray-600 hover:bg-gray-200/50"
-                      }`}
-                  >
-                    {cat.name} ({computedRecords.filter(r => r.matchedCategoryId === cat.id && !r.isFooter).length})
-                  </button>
-                ))}
+                {appliedCategories.map((cat) => {
+                  const sheetStatus = categorySheetStatuses.get(cat.id) || { recordCount: 0, state: "unlinked" as const };
+                  const isActive = activeTab === cat.id;
+                  const needsSync = sheetStatus.recordCount > 0 && sheetStatus.state !== "synced";
+                  const tabColor = needsSync
+                    ? isActive
+                      ? "bg-red-50 text-red-700 shadow-sm border border-red-300"
+                      : "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+                    : isActive
+                      ? "bg-white text-indigo-600 shadow-sm border border-gray-200/60"
+                      : "text-gray-600 hover:bg-gray-200/50 border border-transparent";
+
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => setActiveTab(cat.id)}
+                      className={`w-full text-left flex-shrink-0 cursor-pointer px-3 py-2 rounded-lg transition-colors ${tabColor}`}
+                    >
+                      <span className="flex items-center justify-between gap-2 text-sm font-medium">
+                        <span className="truncate">{cat.name}</span>
+                        <span className="shrink-0">({sheetStatus.recordCount})</span>
+                      </span>
+                      {sheetStatus.state === "synced" && (
+                        <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+                          <CheckCircle className="h-3 w-3" /> Đã gửi Google Sheet
+                        </span>
+                      )}
+                      {sheetStatus.state === "pending" && (
+                        <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-red-600">
+                          <CircleAlert className="h-3 w-3" /> Có giao dịch chưa gửi
+                        </span>
+                      )}
+                      {sheetStatus.state === "empty" && (
+                        <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+                          <Link2 className="h-3 w-3" /> Đã liên kết · Chưa có giao dịch
+                        </span>
+                      )}
+                      {sheetStatus.state === "unlinked" && (
+                        <span className={`mt-1 flex items-center gap-1 text-[11px] ${sheetStatus.recordCount > 0 ? "font-medium text-red-600" : "font-normal text-gray-400"}`}>
+                          {sheetStatus.recordCount > 0 ? <CircleAlert className="h-3 w-3" /> : <Unlink className="h-3 w-3" />}
+                          {sheetStatus.recordCount > 0 ? "Chưa liên kết · Có giao dịch chưa gửi" : "Chưa liên kết Google Sheet"}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
                 <button
                   onClick={() => setActiveTab("uncategorized")}
                   className={`w-full text-left flex-shrink-0 cursor-pointer px-3 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === "uncategorized" ? "bg-white text-indigo-600 shadow-sm border border-gray-200/60" : "text-gray-600 hover:bg-gray-200/50"
@@ -820,16 +902,35 @@ export default function Home() {
                   {activeTab !== "all" && activeTab !== "uncategorized" && (() => {
                     const category = appliedCategories.find((item) => item.id === activeTab);
                     if (!category) return null;
+                    const isSynced = categorySheetStatuses.get(category.id)?.state === "synced";
                     return (
-                      <button
-                        onClick={() => handleSyncCategory(category)}
-                        disabled={!category.sheetLink || syncingCategoryId === category.id}
-                        title={category.sheetLink ? `Gửi sang ${category.sheetLink.spreadsheetName} / ${category.sheetLink.sheetName}` : "Hãy liên kết Google Sheet trong phần Cài đặt thiện pháp và bấm Áp dụng phân loại"}
-                        className="mr-auto flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed transition shadow-sm"
-                      >
-                        {syncingCategoryId === category.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                        {syncingCategoryId === category.id ? "Đang gửi..." : "Gửi sang Google Sheet"}
-                      </button>
+                      <div className="mr-auto flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => handleSyncCategory(category)}
+                          disabled={!category.sheetLink || syncingCategoryId === category.id}
+                          title={category.sheetLink ? `Gửi sang ${category.sheetLink.spreadsheetName} / ${category.sheetLink.sheetName}` : "Hãy liên kết Google Sheet trong phần Cài đặt thiện pháp và bấm Áp dụng phân loại"}
+                          className="flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed transition shadow-sm"
+                        >
+                          {syncingCategoryId === category.id
+                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : isSynced
+                              ? <CheckCircle className="w-4 h-4" />
+                              : <Send className="w-4 h-4" />}
+                          {syncingCategoryId === category.id ? "Đang gửi..." : isSynced ? "Đã gửi · Gửi lại" : "Gửi sang Google Sheet"}
+                        </button>
+                        {category.sheetLink && (
+                          <a
+                            href={getGoogleSheetUrl(category)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`Mở ${category.sheetLink.spreadsheetName} / ${category.sheetLink.sheetName}`}
+                            className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                            Mở Google Sheet
+                          </a>
+                        )}
+                      </div>
                     );
                   })()}
                   <button

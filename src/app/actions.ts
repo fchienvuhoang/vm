@@ -140,7 +140,7 @@ export async function syncCategoryToSheetAction(categoryId: string, records: She
     const appliedCategories = await redis.get<Category[]>("vimutti_appliedCategories") || [];
     const category = appliedCategories.find((item) => item.id === categoryId);
     if (!category?.sheetLink) return { success: false as const, error: "Thiện pháp này chưa được liên kết với Google Sheet." };
-    return await syncRecordsToSheet(category.sheetLink, category.name, records);
+    return await syncRecordsToSheet(category.sheetLink, records);
   } catch (error) {
     console.error("Lỗi khi đồng bộ Google Sheet:", error);
     return { success: false as const, error: error instanceof Error ? error.message : "Không thể đồng bộ dữ liệu sang Google Sheet." };

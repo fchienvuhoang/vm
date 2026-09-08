@@ -267,7 +267,7 @@ export default function Home() {
     await loadTabs(initialFileId, category.sheetLink ? String(category.sheetLink.sheetId) : "");
   };
 
-  const handleSaveSheetLink = () => {
+  const handleSaveSheetLink = async () => {
     if (!linkingCategory) return;
     const file = sheetFiles.find((item) => item.id === selectedSpreadsheetId);
     const tab = sheetTabs.find((item) => String(item.sheetId) === selectedSheetId);
@@ -275,17 +275,25 @@ export default function Home() {
       setSheetLinkError("Hãy chọn đầy đủ file và tab cần liên kết.");
       return;
     }
-    const updated = categories.map((category) => category.id === linkingCategory.id ? {
+    const sheetLink = {
+      spreadsheetId: file.id,
+      spreadsheetName: file.name,
+      sheetId: tab.sheetId,
+      sheetName: tab.title,
+    };
+    const updatedCategories = categories.map((category) => category.id === linkingCategory.id ? {
       ...category,
-      sheetLink: {
-        spreadsheetId: file.id,
-        spreadsheetName: file.name,
-        sheetId: tab.sheetId,
-        sheetName: tab.title,
-      },
+      sheetLink,
     } : category);
-    setCategories(updated);
-    saveCategoriesAction(updated);
+    const updatedAppliedCategories = appliedCategories.map((category) => category.id === linkingCategory.id
+      ? { ...category, sheetLink }
+      : category);
+    setCategories(updatedCategories);
+    setAppliedCategories(updatedAppliedCategories);
+    await Promise.all([
+      saveCategoriesAction(updatedCategories),
+      saveAppliedCategoriesAction(updatedAppliedCategories),
+    ]);
     setSuccessfulSheetSyncSignatures((current) => {
       const next = { ...current };
       delete next[linkingCategory.id];
@@ -294,12 +302,19 @@ export default function Home() {
     setLinkingCategory(null);
   };
 
-  const handleRemoveSheetLink = (categoryId: string) => {
-    const updated = categories.map((category) => category.id === categoryId
+  const handleRemoveSheetLink = async (categoryId: string) => {
+    const updatedCategories = categories.map((category) => category.id === categoryId
       ? { ...category, sheetLink: undefined }
       : category);
-    setCategories(updated);
-    saveCategoriesAction(updated);
+    const updatedAppliedCategories = appliedCategories.map((category) => category.id === categoryId
+      ? { ...category, sheetLink: undefined }
+      : category);
+    setCategories(updatedCategories);
+    setAppliedCategories(updatedAppliedCategories);
+    await Promise.all([
+      saveCategoriesAction(updatedCategories),
+      saveAppliedCategoriesAction(updatedAppliedCategories),
+    ]);
     setSuccessfulSheetSyncSignatures((current) => {
       const next = { ...current };
       delete next[categoryId];
@@ -440,7 +455,8 @@ export default function Home() {
       return `${stt}\t${rowStr}`;
     }).join("\n");
 
-    navigator.clipboard.writeText(`${headers}\n${rows}`);
+    const isCategoryTab = activeTab !== "all" && activeTab !== "uncategorized";
+    navigator.clipboard.writeText(isCategoryTab ? rows : `${headers}\n${rows}`);
     setCopiedTab(true);
     setTimeout(() => setCopiedTab(false), 2000);
   };
@@ -448,16 +464,9 @@ export default function Home() {
   const handleCopyAllData = () => {
     if (computedRecords.length === 0) return;
 
-    // Headers with Nhóm Phân Loại
-    const headers = ["Nhóm Phân Loại", "STT", ...TABLE_COLUMNS.map(c => c.label)].join("\t");
+    const headers = ["STT", ...TABLE_COLUMNS.map(c => c.label)].join("\t");
     
-    // Rows
     const rows = computedRecords.filter(r => !r.isFooter).map((record, index) => {
-      let groupName = "Chưa phân loại";
-      if (record.matchedCategoryId) {
-        groupName = appliedCategories.find(c => c.id === record.matchedCategoryId)?.name || "Chưa phân loại";
-      }
-
       const rowStr = TABLE_COLUMNS.map(col => {
         let val = record[col.key];
         if (col.key === "ngayGioGiaoDich") val = formatDateStr(String(val || ""));
@@ -468,7 +477,7 @@ export default function Home() {
         return String(val || "").replace(/\n/g, " ");
       }).join("\t");
       
-      return `${groupName}\t${index + 1}\t${rowStr}`;
+      return `${index + 1}\t${rowStr}`;
     }).join("\n");
 
     navigator.clipboard.writeText(`${headers}\n${rows}`);
@@ -832,7 +841,8 @@ export default function Home() {
               <div className="flex-1 p-3 flex flex-col gap-1.5 overflow-y-auto max-h-[250px] sm:max-h-none">
                 <button
                   onClick={() => setActiveTab("all")}
-                  className={`w-full text-left flex-shrink-0 cursor-pointer px-3 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === "all" ? "bg-white text-indigo-600 shadow-sm border border-gray-200/60" : "text-gray-600 hover:bg-gray-200/50"
+                  aria-current={activeTab === "all" ? "page" : undefined}
+                  className={`w-full text-left flex-shrink-0 cursor-pointer px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all ${activeTab === "all" ? "bg-indigo-600 text-white font-semibold shadow-md border-indigo-700 ring-2 ring-indigo-200" : "text-gray-600 border-transparent hover:bg-gray-200/50"
                     }`}
                 >
                   Tất cả ({computedRecords.filter(r => !r.isFooter).length})
@@ -840,44 +850,42 @@ export default function Home() {
                 {appliedCategories.map((cat) => {
                   const sheetStatus = categorySheetStatuses.get(cat.id) || { recordCount: 0, state: "unlinked" as const };
                   const isActive = activeTab === cat.id;
-                  const needsSync = sheetStatus.recordCount > 0 && sheetStatus.state !== "synced";
-                  const tabColor = needsSync
-                    ? isActive
-                      ? "bg-red-50 text-red-700 shadow-sm border border-red-300"
-                      : "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
-                    : isActive
-                      ? "bg-white text-indigo-600 shadow-sm border border-gray-200/60"
-                      : "text-gray-600 hover:bg-gray-200/50 border border-transparent";
+                  const needsSync = sheetStatus.state === "pending";
+                  const tabColor = isActive
+                    ? "bg-indigo-600 text-white shadow-md border-2 border-indigo-700 ring-2 ring-indigo-200"
+                    : needsSync
+                      ? "bg-red-50 text-red-700 border-2 border-red-200 hover:bg-red-100"
+                      : "text-gray-600 hover:bg-gray-200/50 border-2 border-transparent";
 
                   return (
                     <button
                       key={cat.id}
                       onClick={() => setActiveTab(cat.id)}
-                      className={`w-full text-left flex-shrink-0 cursor-pointer px-3 py-2 rounded-lg transition-colors ${tabColor}`}
+                      aria-current={isActive ? "page" : undefined}
+                      className={`w-full text-left flex-shrink-0 cursor-pointer px-3 py-2 rounded-lg transition-all ${tabColor}`}
                     >
-                      <span className="flex items-center justify-between gap-2 text-sm font-medium">
+                      <span className={`flex items-center justify-between gap-2 text-sm ${isActive ? "font-semibold" : "font-medium"}`}>
                         <span className="truncate">{cat.name}</span>
                         <span className="shrink-0">({sheetStatus.recordCount})</span>
                       </span>
                       {sheetStatus.state === "synced" && (
-                        <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+                        <span className={`mt-1 flex items-center gap-1 text-[11px] font-medium ${isActive ? "text-emerald-100" : "text-emerald-600"}`}>
                           <CheckCircle className="h-3 w-3" /> Đã gửi Google Sheet
                         </span>
                       )}
                       {sheetStatus.state === "pending" && (
-                        <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-red-600">
+                        <span className={`mt-1 flex w-fit items-center gap-1 text-[11px] font-medium ${isActive ? "rounded bg-white px-1.5 py-0.5 text-red-600" : "text-red-600"}`}>
                           <CircleAlert className="h-3 w-3" /> Có giao dịch chưa gửi
                         </span>
                       )}
                       {sheetStatus.state === "empty" && (
-                        <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+                        <span className={`mt-1 flex items-center gap-1 text-[11px] font-medium ${isActive ? "text-indigo-100" : "text-emerald-600"}`}>
                           <Link2 className="h-3 w-3" /> Đã liên kết · Chưa có giao dịch
                         </span>
                       )}
                       {sheetStatus.state === "unlinked" && (
-                        <span className={`mt-1 flex items-center gap-1 text-[11px] ${sheetStatus.recordCount > 0 ? "font-medium text-red-600" : "font-normal text-gray-400"}`}>
-                          {sheetStatus.recordCount > 0 ? <CircleAlert className="h-3 w-3" /> : <Unlink className="h-3 w-3" />}
-                          {sheetStatus.recordCount > 0 ? "Chưa liên kết · Có giao dịch chưa gửi" : "Chưa liên kết Google Sheet"}
+                        <span className={`mt-1 flex items-center gap-1 text-[11px] font-normal ${isActive ? "text-indigo-100" : "text-gray-400"}`}>
+                          <Unlink className="h-3 w-3" /> Chưa liên kết Google Sheet
                         </span>
                       )}
                     </button>
@@ -885,7 +893,8 @@ export default function Home() {
                 })}
                 <button
                   onClick={() => setActiveTab("uncategorized")}
-                  className={`w-full text-left flex-shrink-0 cursor-pointer px-3 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === "uncategorized" ? "bg-white text-indigo-600 shadow-sm border border-gray-200/60" : "text-gray-600 hover:bg-gray-200/50"
+                  aria-current={activeTab === "uncategorized" ? "page" : undefined}
+                  className={`w-full text-left flex-shrink-0 cursor-pointer px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all ${activeTab === "uncategorized" ? "bg-indigo-600 text-white font-semibold shadow-md border-indigo-700 ring-2 ring-indigo-200" : "text-gray-600 border-transparent hover:bg-gray-200/50"
                     }`}
                 >
                   Chưa phân loại ({computedRecords.filter(r => !r.matchedCategoryId && !r.isFooter).length})
@@ -897,18 +906,27 @@ export default function Home() {
             {/* Table Area */}
             <div className="flex-1 flex flex-col min-w-0 bg-white">
               {/* Header Copy Button */}
-              {filteredRecords.length > 0 && (
+              {(filteredRecords.length > 0 || (activeTab !== "all" && activeTab !== "uncategorized")) && (
                 <div className="p-2 border-b border-gray-100 flex flex-wrap items-center justify-end gap-2 bg-white z-10 sticky top-0">
                   {activeTab !== "all" && activeTab !== "uncategorized" && (() => {
                     const category = appliedCategories.find((item) => item.id === activeTab);
                     if (!category) return null;
-                    const isSynced = categorySheetStatuses.get(category.id)?.state === "synced";
+                    const categorySheetStatus = categorySheetStatuses.get(category.id);
+                    const isSynced = categorySheetStatus?.state === "synced";
+                    const transactionCount = categorySheetStatus?.recordCount || 0;
                     return (
                       <div className="mr-auto flex flex-wrap items-center gap-2">
                         <button
+                          onClick={() => handleOpenSheetLink(category)}
+                          className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 transition hover:bg-indigo-100 cursor-pointer"
+                        >
+                          <Link2 className="h-4 w-4" />
+                          {category.sheetLink ? "Đổi liên kết" : "Liên kết Google Sheet"}
+                        </button>
+                        <button
                           onClick={() => handleSyncCategory(category)}
                           disabled={!category.sheetLink || syncingCategoryId === category.id}
-                          title={category.sheetLink ? `Gửi sang ${category.sheetLink.spreadsheetName} / ${category.sheetLink.sheetName}` : "Hãy liên kết Google Sheet trong phần Cài đặt thiện pháp và bấm Áp dụng phân loại"}
+                          title={category.sheetLink ? `Gửi sang ${category.sheetLink.spreadsheetName} / ${category.sheetLink.sheetName}` : "Hãy liên kết Google Sheet trước khi gửi"}
                           className="flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed transition shadow-sm"
                         >
                           {syncingCategoryId === category.id
@@ -916,7 +934,11 @@ export default function Home() {
                             : isSynced
                               ? <CheckCircle className="w-4 h-4" />
                               : <Send className="w-4 h-4" />}
-                          {syncingCategoryId === category.id ? "Đang gửi..." : isSynced ? "Đã gửi · Gửi lại" : "Gửi sang Google Sheet"}
+                          {syncingCategoryId === category.id
+                            ? `Đang gửi ${transactionCount} giao dịch...`
+                            : isSynced
+                              ? `Đã gửi ${transactionCount} giao dịch · Gửi lại`
+                              : `Gửi sang Google Sheet (${transactionCount} giao dịch)`}
                         </button>
                         {category.sheetLink && (
                           <a
@@ -933,38 +955,42 @@ export default function Home() {
                       </div>
                     );
                   })()}
-                  <button
-                    onClick={handleCopyAllData}
-                    className="flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition shadow-sm"
-                  >
-                    {copiedAll ? (
-                      <>
-                        <Check className="w-4 h-4 text-indigo-500" />
-                        Đã Copy Tất Cả!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4" />
-                        Copy tất cả tab
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={handleCopyTable}
-                    className="flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition shadow-sm"
-                  >
-                    {copiedTab ? (
-                      <>
-                        <Check className="w-4 h-4 text-green-400" />
-                        Đã Copy!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4" />
-                        Copy bảng {activeTab === "all" ? "Tất cả" : activeTab === "uncategorized" ? "Chưa phân loại" : appliedCategories.find(c => c.id === activeTab)?.name || ""}
-                      </>
-                    )}
-                  </button>
+                  {filteredRecords.length > 0 && (
+                    <>
+                      <button
+                        onClick={handleCopyAllData}
+                        className="flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition shadow-sm"
+                      >
+                        {copiedAll ? (
+                          <>
+                            <Check className="w-4 h-4 text-indigo-500" />
+                            Đã Copy Tất Cả!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4" />
+                            Copy tất cả tab
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={handleCopyTable}
+                        className="flex justify-center items-center cursor-pointer gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition shadow-sm"
+                      >
+                        {copiedTab ? (
+                          <>
+                            <Check className="w-4 h-4 text-green-400" />
+                            Đã Copy!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4" />
+                            Copy bảng {activeTab === "all" ? "Tất cả" : activeTab === "uncategorized" ? "Chưa phân loại" : appliedCategories.find(c => c.id === activeTab)?.name || ""}
+                          </>
+                        )}
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1230,7 +1256,7 @@ export default function Home() {
                 </select>
               </div>
               <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg p-3 leading-relaxed">
-                Dữ liệu luôn được nối tiếp ở cuối sheet theo thứ tự cột: STT · Thời gian · Chủ tài khoản · Nội dung · Tiền ra · Tiền vào · Ghi chú · Quỹ. Các dòng đã có sẽ không bị ghi đè.
+                Dữ liệu luôn được nối tiếp ở cuối sheet theo thứ tự cột: STT · Thời gian · Chủ tài khoản · Nội dung · Tiền ra · Tiền vào · Ghi chú · Quỹ (để trống). Các dòng đã có sẽ không bị ghi đè.
               </div>
             </div>
             <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50">

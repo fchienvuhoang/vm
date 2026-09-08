@@ -48,7 +48,7 @@ function quoteSheetName(name: string) {
   return `'${name.replace(/'/g, "''")}'`;
 }
 
-export async function syncRecordsToSheet(link: SheetLink, categoryName: string, records: SheetSyncRecord[]) {
+export async function syncRecordsToSheet(link: SheetLink, records: SheetSyncRecord[]) {
   const { sheets } = getGoogleClients();
   const target = quoteSheetName(link.sheetName);
 
@@ -92,7 +92,7 @@ export async function syncRecordsToSheet(link: SheetLink, categoryName: string, 
     record.tienRa,
     record.tienVao,
     record.ghiChu,
-    categoryName,
+    "",
   ]);
 
   // INSERT_ROWS appends new physical rows and never overwrites existing cell
@@ -111,19 +111,34 @@ export async function syncRecordsToSheet(link: SheetLink, categoryName: string, 
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: link.spreadsheetId,
       requestBody: {
-        requests: [{
-          repeatCell: {
-            range: {
-              sheetId: link.sheetId,
-              startRowIndex: Number(appendedRows[1]) - 1,
-              endRowIndex: Number(appendedRows[2]),
-              startColumnIndex: 3,
-              endColumnIndex: 4,
+        requests: [
+          {
+            repeatCell: {
+              range: {
+                sheetId: link.sheetId,
+                startRowIndex: Number(appendedRows[1]) - 1,
+                endRowIndex: Number(appendedRows[2]),
+                startColumnIndex: 3,
+                endColumnIndex: 4,
+              },
+              cell: { userEnteredFormat: { wrapStrategy: "WRAP" } },
+              fields: "userEnteredFormat.wrapStrategy",
             },
-            cell: { userEnteredFormat: { wrapStrategy: "WRAP" } },
-            fields: "userEnteredFormat.wrapStrategy",
           },
-        }],
+          {
+            repeatCell: {
+              range: {
+                sheetId: link.sheetId,
+                startRowIndex: Number(appendedRows[1]) - 1,
+                endRowIndex: Number(appendedRows[2]),
+                startColumnIndex: 4,
+                endColumnIndex: 6,
+              },
+              cell: { userEnteredFormat: { textFormat: { bold: false } } },
+              fields: "userEnteredFormat.textFormat.bold",
+            },
+          },
+        ],
       },
     });
   }
